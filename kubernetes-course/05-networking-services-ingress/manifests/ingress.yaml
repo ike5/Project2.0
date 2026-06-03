@@ -1,0 +1,30 @@
+# Path-based Ingress: localhost/ -> web, localhost/api -> api.
+# The rewrite-target annotation strips the /api prefix before forwarding, because
+# the web-api app serves its routes at "/" (it doesn't know about "/api").
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apps
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # /api/foo -> api service, forwarded as /foo
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          # everything else -> web service
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

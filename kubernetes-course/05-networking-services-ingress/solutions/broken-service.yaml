@@ -1,0 +1,37 @@
+# BROKEN ON PURPOSE for Challenge task 1.
+# The Service selector (app=webapp) does NOT match the Pods' label (app=web),
+# so the Service has zero endpoints and traffic goes nowhere.
+# Fix: change the Service selector to app=web (or relabel the pods). See solution.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web-api
+          image: web-api:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-broken
+spec:
+  selector:
+    app: webapp          # <-- BUG: no Pod has this label (they're app=web)
+  ports:
+    - port: 80
+      targetPort: 8080

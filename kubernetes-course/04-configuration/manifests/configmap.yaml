@@ -1,0 +1,9 @@
+# Non-secret configuration for web-api.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+data:
+  GREETING: "Hello from a ConfigMap!"
+  COLOR: "teal"
+  APP_VERSION: "1.0.0-cfg"
