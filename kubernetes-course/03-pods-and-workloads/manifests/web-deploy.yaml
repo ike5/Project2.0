@@ -1,0 +1,30 @@
+# A Deployment of the course sample app, web-api.
+# Note imagePullPolicy: Never — the image was built locally and `kind load`ed,
+# so the kubelet must NOT try to pull it from a registry.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web                 # (A) which Pods this Deployment owns
+  template:
+    metadata:
+      labels:
+        app: web               # (B) must match (A)
+    spec:
+      containers:
+        - name: web-api
+          image: web-api:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: COLOR
+              value: "blue"
+            - name: APP_VERSION
+              value: "1.0.0"
