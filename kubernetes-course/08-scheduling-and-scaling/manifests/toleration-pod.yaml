@@ -1,0 +1,17 @@
+# A Pod that tolerates the control-plane taint, so the scheduler is ALLOWED to place
+# it on the (normally repelled) control-plane node. nodeSelector nudges it there.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: on-control-plane
+spec:
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  containers:
+    - name: shell
+      image: busybox:1.36
+      command: ["sh", "-c", "echo running on $(hostname); sleep 3600"]
