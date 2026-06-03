@@ -1,0 +1,19 @@
+# Default and bound container resources in 'team-a' so Pods that omit them still
+# get sane values (and thus satisfy the ResourceQuota's requests.* limits).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: team-a-limits
+  namespace: team-a
+spec:
+  limits:
+    - type: Container
+      default:               # used as 'limits' if a container doesn't set them
+        cpu: 250m
+        memory: 256Mi
+      defaultRequest:        # used as 'requests' if a container doesn't set them
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "1"
+        memory: 1Gi
