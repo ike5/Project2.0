@@ -1,0 +1,11 @@
+# Keep at least 2 'web' pods available during voluntary disruptions (node drains, upgrades).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+  namespace: team-a
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: web

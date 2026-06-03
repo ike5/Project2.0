@@ -1,0 +1,37 @@
+# Spreads replicas across distinct nodes using podAntiAffinity (HA pattern).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spread
+  labels:
+    app: spread
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: spread
+  template:
+    metadata:
+      labels:
+        app: spread
+    spec:
+      affinity:
+        podAntiAffinity:
+          # try hard to put each replica on a different node
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: spread
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: web-api
+          image: web-api:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"

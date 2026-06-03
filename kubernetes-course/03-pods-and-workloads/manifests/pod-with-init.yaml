@@ -1,0 +1,32 @@
+# Demonstrates init containers and a sidecar sharing the Pod.
+# - The init container runs FIRST and must finish before the app starts.
+# - Both containers share an emptyDir volume and the same network (localhost).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: init-demo
+  labels:
+    app: init-demo
+spec:
+  # init containers run to completion, in order, before the main containers start
+  initContainers:
+    - name: setup
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - 'echo "Prepared by init at $(date)" > /work/index.html; echo "init done"'
+      volumeMounts:
+        - name: shared
+          mountPath: /work
+  containers:
+    - name: web
+      image: nginx:1.27
+      ports:
+        - containerPort: 80
+      volumeMounts:
+        - name: shared
+          mountPath: /usr/share/nginx/html   # serves the file the init container wrote
+  volumes:
+    - name: shared
+      emptyDir: {}                            # ephemeral, lives as long as the Pod

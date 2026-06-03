@@ -1,0 +1,25 @@
+# Default values for the web-api chart. Override with -f file.yaml or --set key=value.
+replicaCount: 2
+
+image:
+  repository: web-api
+  tag: "1.0"
+  pullPolicy: Never        # local kind image; set to IfNotPresent for real registries
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# Injected into the container as env vars (see templates/deployment.yaml)
+config:
+  greeting: "Hello from Helm"
+  color: "blue"
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "250m"
+    memory: "128Mi"

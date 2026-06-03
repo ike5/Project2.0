@@ -1,0 +1,16 @@
+# A Job that computes pi to 200 digits, three times (completions), two at a time.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+spec:
+  completions: 3        # require 3 successful Pod runs
+  parallelism: 2        # run up to 2 at once
+  backoffLimit: 4       # retry failed pods up to 4 times before failing the Job
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: pi
+          image: perl:5.40-slim
+          command: ["perl", "-Mbignum=bpi", "-wle", "print bpi(200)"]

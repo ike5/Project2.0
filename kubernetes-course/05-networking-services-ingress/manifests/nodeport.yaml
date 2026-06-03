@@ -1,0 +1,14 @@
+# A NodePort Service exposing web on a fixed port on every node.
+# (The web Deployment from deploy-and-service.yaml must already exist.)
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080      # 30000-32767; reachable at <node-ip>:30080

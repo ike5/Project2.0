@@ -1,0 +1,10 @@
+# BROKEN: the image tag doesn't exist -> ImagePullBackOff.
+# Diagnose with: kubectl describe pod broken-image  (read the Events)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-image
+spec:
+  containers:
+    - name: app
+      image: nginx:this-tag-does-not-exist

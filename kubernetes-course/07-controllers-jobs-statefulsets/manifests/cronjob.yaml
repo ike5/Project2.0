@@ -1,0 +1,20 @@
+# A CronJob that prints the date every minute. Keeps a little history so you can
+# inspect past runs.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: heartbeat
+spec:
+  schedule: "*/1 * * * *"        # every minute
+  concurrencyPolicy: Forbid       # don't start a new run if the previous is still going
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: beat
+              image: busybox:1.36
+              command: ["sh", "-c", "echo heartbeat at $(date)"]

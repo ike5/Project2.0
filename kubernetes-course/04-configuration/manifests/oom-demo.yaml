@@ -1,0 +1,25 @@
+# A Pod that deliberately allocates more memory than its limit, so you can watch
+# it get OOMKilled. Uses a tiny stress loop in Python.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-demo
+spec:
+  restartPolicy: Never
+  containers:
+    - name: hog
+      image: python:3.12-slim
+      command:
+        - python
+        - -c
+        - |
+          # allocate ~200MB in a list of bytes; limit is 64Mi -> OOMKilled
+          chunks = []
+          for i in range(200):
+              chunks.append(bytearray(1024 * 1024))  # 1 MiB each
+              print("allocated", i + 1, "MiB", flush=True)
+      resources:
+        requests:
+          memory: "32Mi"
+        limits:
+          memory: "64Mi"     # well below the 200MiB the process tries to allocate

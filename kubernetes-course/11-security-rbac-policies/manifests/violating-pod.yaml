@@ -1,0 +1,14 @@
+# This Pod VIOLATES the 'restricted' standard (runs as root, privilege escalation
+# allowed, no seccomp, no dropped caps). Applying it in the 'secure' namespace is
+# REJECTED by Pod Security admission. See the lab.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad
+  namespace: secure
+spec:
+  containers:
+    - name: app
+      image: nginx:1.27        # runs as root by default -> violates 'restricted'
+      ports:
+        - containerPort: 80

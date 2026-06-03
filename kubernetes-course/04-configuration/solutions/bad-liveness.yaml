@@ -1,0 +1,25 @@
+# BROKEN ON PURPOSE for Challenge task 3.
+# The liveness probe hits /nope (404) with a tiny delay, so the kubelet keeps
+# restarting a perfectly healthy container -> CrashLoopBackOff.
+# Your job: diagnose via `kubectl describe pod bad-liveness` and fix the probe
+# (point it at /healthz, give it an initialDelaySeconds). See solution.md.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-liveness
+  labels:
+    app: bad-liveness
+spec:
+  containers:
+    - name: web-api
+      image: web-api:1.0
+      imagePullPolicy: Never
+      ports:
+        - containerPort: 8080
+      livenessProbe:
+        httpGet:
+          path: /nope          # <-- 404, will always fail
+          port: 8080
+        initialDelaySeconds: 0  # <-- no grace period
+        periodSeconds: 2
+        failureThreshold: 1     # <-- one miss and it's killed

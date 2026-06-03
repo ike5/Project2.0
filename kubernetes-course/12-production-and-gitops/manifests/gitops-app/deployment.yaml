@@ -1,0 +1,28 @@
+# The application Argo CD deploys from Git. Change a value here, commit & push, and
+# Argo CD will sync the change into the cluster (see lab.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitops-web
+  labels:
+    app: gitops-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gitops-web
+  template:
+    metadata:
+      labels:
+        app: gitops-web
+    spec:
+      containers:
+        - name: web
+          # Public image so Argo CD works without kind-loading anything.
+          image: nginxdemos/hello:plain-text
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"

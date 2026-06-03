@@ -1,0 +1,24 @@
+# An Argo CD Application: "keep the cluster in sync with this repo path."
+#
+# IMPORTANT: set repoURL to YOUR fork/repo URL (the one Argo CD can reach).
+# By default it points at this course's repo; change it to wherever you pushed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitops-web
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ike5/project2.0.git    # <-- change to your repo URL
+    targetRevision: HEAD
+    path: kubernetes-course/12-production-and-gitops/manifests/gitops-app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gitops
+  syncPolicy:
+    automated:
+      prune: true        # delete resources removed from Git
+      selfHeal: true     # revert manual drift back to Git's state
+    syncOptions:
+      - CreateNamespace=true

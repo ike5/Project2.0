@@ -1,0 +1,8 @@
+# Python build artifacts (e.g. from running the sample apps locally)
+__pycache__/
+*.pyc
+.venv/
+
+# Local kubeconfig / secret material — never commit real secrets
+*.kubeconfig
+*.local.yaml

@@ -1,0 +1,21 @@
+# A sample of what `kubectl create deployment ... --dry-run=client -o yaml` produces.
+# In the lab you generate this yourself; it's included here for reference.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello2
+  labels:
+    app: hello2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello2
+  template:
+    metadata:
+      labels:
+        app: hello2
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27

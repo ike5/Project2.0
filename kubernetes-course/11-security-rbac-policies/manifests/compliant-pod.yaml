@@ -1,0 +1,24 @@
+# This Pod SATISFIES the 'restricted' standard and is admitted into 'secure'.
+# Note the hardening: non-root, no privilege escalation, dropped capabilities, seccomp.
+# We use our web-api image, which already runs as the non-root 'appuser'.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good
+  namespace: secure
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: web-api
+      image: web-api:1.0
+      imagePullPolicy: Never
+      ports:
+        - containerPort: 8080
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities:
+          drop: ["ALL"]

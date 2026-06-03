@@ -1,0 +1,28 @@
+# kind cluster definition for the whole course.
+# Creates a 3-node cluster: 1 control-plane + 2 workers.
+#
+# Create with:  kind create cluster --name k8s-course --config kind-cluster.yaml
+#
+# The extraPortMappings on the control-plane node forward your Mac's localhost
+# ports 80/443 into the cluster so the Ingress controller (Module 05) is reachable
+# at http://localhost. The node label + ingress-ready=true is what ingress-nginx's
+# kind manifest looks for when scheduling its controller.
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+  - role: worker

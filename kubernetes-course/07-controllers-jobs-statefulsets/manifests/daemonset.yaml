@@ -1,0 +1,25 @@
+# A trivial DaemonSet: one "node agent" Pod per node. On your 3-node kind cluster
+# you'll get up to 3 Pods (control-plane is tainted by default, so likely 2 on workers).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  labels:
+    app: node-agent
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      labels:
+        app: node-agent
+    spec:
+      containers:
+        - name: agent
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo agent on $(hostname); sleep 30; done"]
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"

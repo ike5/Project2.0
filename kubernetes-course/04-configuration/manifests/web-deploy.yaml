@@ -1,0 +1,54 @@
+# web-api wired up with: config from a ConfigMap, a Secret, resource requests/limits,
+# and liveness + readiness probes hitting the app's /healthz and /readyz endpoints.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web-api
+          image: web-api:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          # all keys from the ConfigMap become env vars:
+          envFrom:
+            - configMapRef:
+                name: web-config
+          # individual secret key -> env var:
+          env:
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: web-secret
+                  key: API_TOKEN
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5

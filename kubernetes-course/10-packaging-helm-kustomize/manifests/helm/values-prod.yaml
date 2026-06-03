@@ -1,0 +1,13 @@
+# Production overrides for the web-api chart.
+# Usage: helm install web ./web-api -f ../values-prod.yaml
+replicaCount: 5
+config:
+  greeting: "Hello from PRODUCTION"
+  color: "red"
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
