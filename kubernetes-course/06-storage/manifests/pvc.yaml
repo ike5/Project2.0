@@ -1,0 +1,13 @@
+# A claim for 1Gi of ReadWriteOnce storage. With kind's default StorageClass,
+# a matching PersistentVolume is provisioned automatically and bound to this claim.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName omitted -> uses the cluster's default StorageClass ("standard" on kind)
