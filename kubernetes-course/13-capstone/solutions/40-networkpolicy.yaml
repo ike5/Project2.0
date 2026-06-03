@@ -1,0 +1,22 @@
+# Least-privilege networking for the data tier: only guestbook pods may reach Redis
+# on 6379. Everything else is denied. (Enforced only on a policy-capable CNI like
+# Calico — see Module 11. On kindnet it's accepted but not enforced.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-allow-guestbook-only
+  namespace: guestbook
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: guestbook
+      ports:
+        - protocol: TCP
+          port: 6379
