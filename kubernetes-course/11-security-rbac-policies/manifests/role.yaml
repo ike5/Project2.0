@@ -1,0 +1,10 @@
+# Least-privilege: read-only access to Pods in the 'default' namespace. Nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+  namespace: default
+rules:
+  - apiGroups: [""]            # core API group
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]

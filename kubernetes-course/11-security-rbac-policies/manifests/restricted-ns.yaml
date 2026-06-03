@@ -1,0 +1,11 @@
+# A namespace that ENFORCES the 'restricted' Pod Security Standard. Pods that don't
+# meet the hardening bar are rejected at admission time.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    # warn/audit also available; enforce actually blocks.
+    pod-security.kubernetes.io/warn: restricted

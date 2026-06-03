@@ -1,0 +1,17 @@
+# OPTIONAL: a separate kind cluster with the default CNI DISABLED, so you can install
+# Calico and get REAL NetworkPolicy enforcement.
+#
+#   kind create cluster --name netpol --config kind-calico.yaml
+#   kubectl --context kind-netpol apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
+#   # wait for calico pods: kubectl --context kind-netpol -n kube-system get pods -w
+#
+# Then run the NetworkPolicy lab steps against --context kind-netpol.
+# Delete when done:  kind delete cluster --name netpol
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+networking:
+  disableDefaultCNI: true          # turn off kindnet so Calico can take over
+  podSubnet: "192.168.0.0/16"      # Calico's default expected pod CIDR
+nodes:
+  - role: control-plane
+  - role: worker

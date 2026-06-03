@@ -1,0 +1,21 @@
+# Narrow allow: permit ingress to app=web ONLY from pods labeled access=web-client,
+# and only on port 8080. Combined with default-deny, this is least-privilege networking.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-from-client
+  namespace: netpol-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              access: "web-client"
+      ports:
+        - protocol: TCP
+          port: 8080

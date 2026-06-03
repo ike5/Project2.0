@@ -1,0 +1,12 @@
+# Default-deny ALL ingress to every pod in netpol-demo.
+# Once this selects a pod for Ingress with no allow rules, all incoming traffic is denied.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: netpol-demo
+spec:
+  podSelector: {}            # all pods in the namespace
+  policyTypes:
+    - Ingress
+  # no ingress rules => deny all incoming

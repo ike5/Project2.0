@@ -1,0 +1,43 @@
+# Two apps in namespace 'netpol-demo' to test NetworkPolicies:
+#  - 'web' (a server) and a Service in front of it
+#  - clients will be run ad-hoc in the lab and labeled to be allowed/denied
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netpol-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: netpol-demo
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web-api
+          image: web-api:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: netpol-demo
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
