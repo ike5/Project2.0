@@ -1,0 +1,17 @@
+# PROD overlay: prefix names with "prod-", scale to 5 replicas, set prod color.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namePrefix: prod-
+resources:
+  - ../../base
+replicas:
+  - name: web-api
+    count: 5
+patches:
+  - target:
+      kind: Deployment
+      name: web-api
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "crimson"

@@ -1,0 +1,26 @@
+# Plain, valid YAML base. Overlays patch this per environment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-api
+  template:
+    metadata:
+      labels:
+        app: web-api
+    spec:
+      containers:
+        - name: web-api
+          image: web-api:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: COLOR
+              value: "blue"
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
