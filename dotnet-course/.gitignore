@@ -1,0 +1,20 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+# Local SQLite databases created by labs
+*.db
+*.db-shm
+*.db-wal
+# Rider / VS
+.idea/
+.vs/
+# Unity (if a project is created under the course locally)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+*.csproj.user
