@@ -5,6 +5,12 @@ Most of this is editor work plus the two scripts here:
 The shared [`HudController`](../../unity-scripts/2d/HudController.cs) gained a
 `SetTimer(int)` method and an optional `timerText` field.
 
+> **Wiring note:** this solution uses a new class `GameManagerExtended` (Unity requires
+> the file name to match the class name, so it can't reuse `GameManager.cs`). If you
+> adopt it, update `Coin.cs` to call `GameManagerExtended.Instance?.AddScore(value)`
+> instead of `GameManager.Instance`, and remove/disable the original `GameManager`
+> component so there's only one manager in the scene.
+
 ### 1. Lose condition (Hazard)
 - Create a red square, add a **trigger** `BoxCollider2D`, add `Hazard`.
 - `Hazard.OnTriggerEnter2D` → `GameManagerExtended.Instance.Lose("Game Over")`.
