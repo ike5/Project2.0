@@ -51,13 +51,14 @@ curl -s http://localhost:5080/api/tasks ; echo     # now includes your task
 > Replace `5080` above with that port, or set it via `appsettings.json` /
 > `ASPNETCORE_URLS`.
 
-## 5. EF Core tooling works
+## 5. EF Core tooling installs
 ```bash
 dotnet tool install --global dotnet-ef    # one-time; restart shell if PATH not updated
-cd <repo>/dotnet-course/apps/TaskApi/src/TaskApi
-dotnet ef migrations list
+dotnet ef --version
 ```
-✅ Expected: at least the `InitialCreate` migration is listed.
+✅ Expected: the EF Core tools version prints. (The reference `TaskApi` creates its
+schema with `EnsureCreated()` for zero-setup; you'll add real **migrations** in
+Module 08, where `dotnet ef migrations add` / `dotnet ef database update` come in.)
 
 ## 6. (Later — Phase 2) Unity
 After Module 10 you'll also verify:
