@@ -24,6 +24,9 @@ redis==5.0.*
 celery==5.4.*
 django-celery-beat==2.6.*       # DB-backed periodic-task schedule
 
+# ── Module 08: outgoing webhook delivery ───────────────────────────────────────
+requests==2.32.*
+
 # ── Module 11: object-storage uploads ──────────────────────────────────────────
 boto3==1.34.*                   # talks to MinIO/S3
 
