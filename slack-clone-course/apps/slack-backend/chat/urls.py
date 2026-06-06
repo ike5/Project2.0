@@ -1,9 +1,10 @@
-"""Chat API routes. Channels/messages viewsets are registered in Module 04."""
+"""Chat API routes (mounted under /api/)."""
 from rest_framework.routers import DefaultRouter
 
+from .views import ChannelViewSet, MessageViewSet
+
 router = DefaultRouter()
-# Module 04 registers:
-# router.register("channels", ChannelViewSet)
-# router.register("messages", MessageViewSet)
+router.register("channels", ChannelViewSet, basename="channel")
+router.register("messages", MessageViewSet, basename="message")
 
 urlpatterns = router.urls

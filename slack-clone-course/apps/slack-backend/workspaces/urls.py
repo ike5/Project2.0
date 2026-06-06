@@ -1,8 +1,9 @@
-"""Workspace API routes. Viewsets registered in Module 04."""
+"""Workspace API routes (mounted under /api/)."""
 from rest_framework.routers import DefaultRouter
 
+from .views import WorkspaceViewSet
+
 router = DefaultRouter()
-# Module 04 registers:
-# router.register("workspaces", WorkspaceViewSet)
+router.register("workspaces", WorkspaceViewSet, basename="workspace")
 
 urlpatterns = router.urls
