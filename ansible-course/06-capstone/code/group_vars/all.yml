@@ -1,0 +1,5 @@
+---
+# Shared settings for the whole deployment.
+app_port: 8080          # the port app servers listen on
+lb_port: 80             # the port the load balancer listens on
+app_name: "Ansible Capstone"

@@ -1,0 +1,6 @@
+---
+# Default variables for the webserver role (lowest precedence — easy to override).
+http_port: 80
+web_root: /srv/www/site
+enable_gzip: true
+site_title: "Webserver role"

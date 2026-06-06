@@ -1,0 +1,19 @@
+# The same inventory in YAML form (use whichever you prefer).
+all:
+  vars:
+    ansible_user: ubuntu
+  children:
+    web:
+      hosts:
+        web01:
+          ansible_host: 192.168.64.11
+        web02:
+          ansible_host: 192.168.64.12
+    lb:
+      hosts:
+        proxy01:
+          ansible_host: 192.168.64.10
+    prod:
+      children:
+        web: {}
+        lb: {}

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+server {
+    listen {{ http_port }} default_server;
+    server_name {{ server_name | default(ansible_hostname) }};
+    root {{ web_root }};
+    index index.html;
+{% if enable_gzip %}
+    gzip on;
+{% endif %}
+}

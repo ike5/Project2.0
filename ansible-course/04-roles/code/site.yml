@@ -1,0 +1,10 @@
+---
+# A clean site playbook: just compose roles. All the logic lives in the roles.
+- name: Web tier
+  hosts: web
+  become: true
+  roles:
+    - common
+    - role: webserver
+      vars:
+        site_title: "Built from roles"

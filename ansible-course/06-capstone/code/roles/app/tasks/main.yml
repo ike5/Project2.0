@@ -1,0 +1,47 @@
+---
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+
+- name: Allow the app port through the firewall (from the LB)
+  community.general.ufw:
+    rule: allow
+    port: "{{ app_port }}"
+    proto: tcp
+
+- name: Ensure the web root exists
+  ansible.builtin.file:
+    path: "{{ web_root }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Render the app homepage (identifies which backend served it)
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ web_root }}/index.html"
+    mode: "0644"
+
+- name: Configure the app nginx site on the app port
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: /etc/nginx/sites-available/app
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the app site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/app
+    dest: /etc/nginx/sites-enabled/default
+    state: link
+    force: true
+  notify: Reload nginx
+
+- name: nginx running and enabled
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

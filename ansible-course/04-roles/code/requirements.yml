@@ -1,0 +1,11 @@
+---
+# Declare external roles/collections; install with:
+#   ansible-galaxy install -r requirements.yml
+collections:
+  - name: community.general
+  - name: ansible.posix
+
+# Example of pulling a community role (uncomment to use):
+# roles:
+#   - name: geerlingguy.nginx
+#     version: "3.1.4"

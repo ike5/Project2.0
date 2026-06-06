@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+  <head><title>{{ site_title | default('Ansible') }}</title></head>
+  <body>
+    <h1>{{ site_title | default('Ansible') }}</h1>
+    <p>Served by <strong>{{ ansible_hostname }}</strong>
+       ({{ ansible_distribution }} {{ ansible_distribution_version }})
+       on port {{ http_port | default(80) }}.</p>
+  </body>
+</html>

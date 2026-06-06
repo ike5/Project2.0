@@ -1,0 +1,8 @@
+# Copy this to `vault.yml` and ENCRYPT it before use:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+# Thereafter edit with: ansible-vault edit vault.yml
+#
+# This file (the .example) is plaintext on purpose so you can see the structure.
+# NEVER commit a plaintext vault.yml — only the encrypted one.
+vault_db_password: "super-secret-change-me"

@@ -1,0 +1,9 @@
+---
+# Variables auto-loaded for every host in the 'web' group.
+http_port: 8080
+web_root: /srv/www/site
+enable_gzip: true
+site_title: "Templated by Ansible"
+packages:
+  - nginx
+  - curl
