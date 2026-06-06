@@ -32,17 +32,53 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.group, self.channel_name)
         await self.accept()
 
+        # Presence: mark online and tell the channel.
+        from . import presence
+
+        presence.touch(self.user.id)
+        await self._broadcast_presence(online=True)
+
     async def disconnect(self, code):
         if hasattr(self, "group"):
+            from . import presence
+
+            presence.go_offline(self.user.id)
+            await self._broadcast_presence(online=False)
             await self.channel_layer.group_discard(self.group, self.channel_name)
 
+    async def _broadcast_presence(self, online: bool):
+        await self.channel_layer.group_send(
+            self.group,
+            {
+                "type": "broadcast.event",
+                "event": {
+                    "type": "presence",
+                    "user": self.user.username,
+                    "online": online,
+                },
+            },
+        )
+
     async def receive(self, text_data=None, bytes_data=None):
+        from . import presence
+
         data = json.loads(text_data or "{}")
         kind = data.get("type")
+
+        # Any inbound frame counts as a heartbeat (keeps presence fresh).
+        presence.touch(self.user.id)
+
+        if kind == "heartbeat":
+            return  # presence already refreshed above
 
         if kind == "message.new":
             body = (data.get("body") or "").strip()
             if not body:
+                return
+            # Rate-limit: at most 10 messages / 10s per user per channel.
+            if not presence.allow(f"msg:{self.user.id}:{self.channel_id}", limit=10, window=10):
+                await self.send(text_data=json.dumps(
+                    {"type": "error", "detail": "slow down"}))
                 return
             message = await self._create_message(body, data.get("parent"))
             # Broadcast to everyone in the channel (including the sender, for the
@@ -87,11 +123,15 @@ class ChannelConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _create_message(self, body, parent_id):
+        from . import presence
+
         msg = Message.objects.create(
             channel_id=self.channel_id,
             author=self.user,
             parent_id=parent_id,
             body=body,
         )
+        # Track the channel's newest message id for cheap unread counts (Module 06).
+        presence.set_channel_head(self.channel_id, msg.id)
         # Re-fetch with author for serialization.
         return Message.objects.select_related("author").get(pk=msg.pk)
