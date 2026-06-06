@@ -1,0 +1,19 @@
+---
+# Deploy an app environment file whose DB password comes from Ansible Vault.
+# Run: ansible-playbook site.yml --ask-vault-pass
+- name: Deploy app config with a vaulted secret
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Render the app environment file
+      ansible.builtin.template:
+        src: templates/app.env.j2
+        dest: /etc/myapp.env
+        owner: root
+        group: root
+        mode: "0640"          # restrict: contains a secret
+
+    - name: Show that the secret landed (masked)
+      ansible.builtin.debug:
+        msg: "DB password is {{ db_password | length }} chars (not printed)"

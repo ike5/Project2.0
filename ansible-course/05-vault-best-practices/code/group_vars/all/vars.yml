@@ -1,0 +1,8 @@
+---
+# PLAIN, committable variables. The secret value is pulled from the encrypted vault.yml.
+app_env: production
+db_host: db01.internal
+db_user: appuser
+
+# Reference the vaulted secret (defined encrypted in group_vars/all/vault.yml):
+db_password: "{{ vault_db_password }}"
