@@ -1,0 +1,14 @@
+[Unit]
+Description=Hello demo service (Linux course)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/hello.sh
+Restart=on-failure
+RestartSec=2
+# Run as an unprivileged user for safety:
+User=nobody
+Group=nogroup
+
+[Install]
+WantedBy=multi-user.target
