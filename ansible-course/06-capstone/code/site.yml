@@ -1,0 +1,15 @@
+---
+# Two plays: configure the app servers, then the load balancer in front of them.
+- name: App tier
+  hosts: web
+  become: true
+  roles:
+    - common
+    - app
+
+- name: Load balancer tier
+  hosts: lb
+  become: true
+  roles:
+    - common
+    - loadbalancer

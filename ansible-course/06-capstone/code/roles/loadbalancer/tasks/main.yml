@@ -1,0 +1,33 @@
+---
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+
+- name: Allow the LB port (HTTP) from anywhere
+  community.general.ufw:
+    rule: allow
+    port: "{{ lb_port }}"
+    proto: tcp
+
+- name: Render the reverse-proxy config (upstream = all app servers)
+  ansible.builtin.template:
+    src: lb.conf.j2
+    dest: /etc/nginx/sites-available/lb
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the LB site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/lb
+    dest: /etc/nginx/sites-enabled/default
+    state: link
+    force: true
+  notify: Reload nginx
+
+- name: nginx running and enabled
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

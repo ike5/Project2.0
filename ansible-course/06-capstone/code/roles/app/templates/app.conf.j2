@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+server {
+    listen {{ app_port }} default_server;
+    root {{ web_root }};
+    index index.html;
+}

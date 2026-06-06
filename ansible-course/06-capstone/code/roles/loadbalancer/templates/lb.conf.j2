@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# Backends are generated from the 'web' inventory group + each host's facts.
+upstream app_backends {
+{% for host in groups['web'] %}
+    server {{ hostvars[host].ansible_default_ipv4.address }}:{{ app_port }};
+{% endfor %}
+}
+
+server {
+    listen {{ lb_port }} default_server;
+
+    location / {
+        proxy_pass http://app_backends;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}

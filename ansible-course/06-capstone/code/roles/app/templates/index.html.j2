@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+  <head><title>{{ app_name }}</title></head>
+  <body>
+    <h1>{{ app_name }}</h1>
+    <p>This response was served by backend <strong>{{ ansible_hostname }}</strong>
+       ({{ ansible_default_ipv4.address }}:{{ app_port }}).</p>
+  </body>
+</html>
