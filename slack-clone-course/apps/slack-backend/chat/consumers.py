@@ -133,5 +133,9 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         )
         # Track the channel's newest message id for cheap unread counts (Module 06).
         presence.set_channel_head(self.channel_id, msg.id)
+        # Async notification fan-out (mentions/DM → in-app + email) (Module 07).
+        from notifications.services import on_new_message
+
+        on_new_message(msg.id)
         # Re-fetch with author for serialization.
         return Message.objects.select_related("author").get(pk=msg.pk)

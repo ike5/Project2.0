@@ -151,10 +151,22 @@ CHANNEL_LAYERS = {
 # ── Celery (Module 07) ─────────────────────────────────────────────────────────
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
+# In tests we run tasks inline (no broker/worker needed).
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    "daily-digest": {
+        "task": "notifications.tasks.send_daily_digest",
+        "schedule": crontab(hour=8, minute=0),   # 08:00 UTC every day
+    },
+}
 
 # ── Email (Module 07) ──────────────────────────────────────────────────────────
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+# Defaults to SMTP (MailHog in dev); override to console/locmem in tests/CI.
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
 EMAIL_HOST = env("EMAIL_HOST", default="localhost")
 EMAIL_PORT = env.int("EMAIL_PORT", default=1025)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@slackclone.local")

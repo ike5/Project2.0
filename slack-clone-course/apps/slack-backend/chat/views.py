@@ -105,3 +105,6 @@ class MessageViewSet(
         from .realtime import broadcast, serialize_message
 
         broadcast(message.channel_id, serialize_message(message))
+        from notifications.services import on_new_message
+
+        on_new_message(message.id)   # async fan-out (Module 07)
