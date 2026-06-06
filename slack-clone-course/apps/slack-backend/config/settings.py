@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",      # Module 11 — full-text search
     # Third-party (enabled as modules introduce them)
     "rest_framework",               # Module 03/04
     "rest_framework_simplejwt.token_blacklist",  # Module 03 — refresh rotation
