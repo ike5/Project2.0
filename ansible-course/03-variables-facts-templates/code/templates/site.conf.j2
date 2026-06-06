@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# Rendered for {{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('?') }})
+server {
+    listen {{ http_port | default(80) }} default_server;
+    server_name {{ server_name | default(ansible_hostname) }};
+    root {{ web_root }};
+    index index.html;
+
+{% if enable_gzip | default(true) %}
+    gzip on;
+    gzip_types text/plain text/css application/javascript;
+{% endif %}
+}

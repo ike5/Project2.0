@@ -1,0 +1,61 @@
+---
+# Variables + facts + templates. group_vars/web.yml supplies http_port, web_root, etc.
+- name: Configure templated web servers
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Show some gathered facts
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} is {{ ansible_distribution }}
+          {{ ansible_distribution_version }} at {{ ansible_default_ipv4.address }}
+
+    - name: Install web packages (loop)
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: true
+      loop: "{{ packages }}"
+      tags: [packages]
+
+    - name: Ensure the web root exists
+      ansible.builtin.file:
+        path: "{{ web_root }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Render the homepage from a template
+      ansible.builtin.template:
+        src: templates/index.html.j2
+        dest: "{{ web_root }}/index.html"
+        mode: "0644"
+
+    - name: Render the nginx site config from a template
+      ansible.builtin.template:
+        src: templates/site.conf.j2
+        dest: /etc/nginx/sites-available/site
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Enable our site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/site
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+        force: true
+      notify: Reload nginx
+
+    - name: nginx running and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
