@@ -1,0 +1,7 @@
+[Unit]
+Description=Write a system report (Linux course timer demo)
+
+[Service]
+Type=oneshot
+# A one-shot job the timer triggers; logs go to the journal.
+ExecStart=/bin/sh -c 'echo "report at $(date -Is): load=$(cut -d\" \" -f1 /proc/loadavg)"'
