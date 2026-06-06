@@ -1,0 +1,16 @@
+---
+# A base role: packages + a managed motd, applied everywhere.
+- name: Install common packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - vim
+      - htop
+    state: present
+    update_cache: true
+
+- name: Set a managed message of the day
+  ansible.builtin.copy:
+    dest: /etc/motd
+    mode: "0644"
+    content: "Managed by Ansible ({{ inventory_hostname }}). Authorized access only.\n"
