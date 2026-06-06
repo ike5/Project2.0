@@ -76,5 +76,9 @@ class MessageViewSet(
         )
         if not allowed:
             raise PermissionDenied("You can't post to that channel.")
-        serializer.save(author=user)
-        # Module 05 adds: broadcast over the channel layer here.
+        message = serializer.save(author=user)
+        # Keep REST and WebSocket consistent: a message created over REST is
+        # broadcast to all live clients too (Module 05).
+        from .realtime import broadcast, serialize_message
+
+        broadcast(message.channel_id, serialize_message(message))
