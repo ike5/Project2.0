@@ -1,0 +1,13 @@
+# Module 13 base: the app running on Kubernetes with simple (non-HA) data services.
+# Later overlays (data/, ha/, hardening/) build on this.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: slack
+resources:
+  - namespace.yaml
+  - config.yaml
+  - data-simple.yaml
+  - backend.yaml
+  - frontend.yaml
+  - ingress.yaml
+  # migrate-job.yaml is applied separately (a one-shot Job), not part of the steady state.

@@ -1,0 +1,19 @@
+# Strategic-merge patch (Module 15): spread web replicas across different nodes so a
+# single node failure can't take down all of them. Apply via kustomize `patches` or:
+#   kubectl patch deploy/web -n slack --patch-file anti-affinity-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: slack
+spec:
+  template:
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: web}

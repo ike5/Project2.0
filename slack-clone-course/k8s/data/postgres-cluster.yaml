@@ -1,0 +1,41 @@
+# HA Postgres via the CloudNativePG operator (Module 14).
+#
+# Install the operator first:
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.24/releases/cnpg-1.24.0.yaml
+#
+# This Cluster runs 1 primary + 2 replicas with streaming replication and AUTOMATIC
+# FAILOVER: if the primary pod or its node dies, the operator promotes a replica and
+# repoints the -rw service. The app just reconnects.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: slack-pg
+  namespace: slack
+spec:
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 1Gi
+  bootstrap:
+    initdb:
+      database: slack
+      owner: slack
+      secret:
+        name: slack-pg-credentials   # provides username/password for the app role
+  # Spread replicas across nodes so one node failing can't take down the quorum.
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+---
+# The app role's credentials. CloudNativePG also exposes the connection via the
+# generated `slack-pg-app` secret; we set a known password here for the course.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-pg-credentials
+  namespace: slack
+type: kubernetes.io/basic-auth
+stringData:
+  username: slack
+  password: slackpass
