@@ -1,0 +1,61 @@
+---
+# A first real playbook: install and configure nginx to serve a custom page.
+# Run:  ansible-playbook -i inventory.ini site.yml
+- name: Configure web servers
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Ensure the web root exists
+      ansible.builtin.file:
+        path: /srv/www/site
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Deploy the homepage
+      ansible.builtin.copy:
+        src: files/index.html
+        dest: /srv/www/site/index.html
+        owner: www-data
+        group: www-data
+        mode: "0644"
+
+    - name: Configure the nginx site
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/site
+        mode: "0644"
+        content: |
+          server {
+              listen 80 default_server;
+              root /srv/www/site;
+              index index.html;
+          }
+      notify: Reload nginx
+
+    - name: Enable the site (symlink), disable the default
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/site
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+        force: true
+      notify: Reload nginx
+
+    - name: Ensure nginx is started and enabled at boot
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

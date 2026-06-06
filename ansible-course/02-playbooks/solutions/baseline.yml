@@ -1,0 +1,47 @@
+---
+# Challenge 02 reference: an idempotent baseline playbook.
+- name: Baseline configuration
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install baseline packages
+      ansible.builtin.apt:
+        name:
+          - htop
+          - curl
+          - vim
+          - ufw
+        state: present
+        update_cache: true
+      tags: [packages]
+
+    - name: Ensure the deploy user exists
+      ansible.builtin.user:
+        name: deploy
+        shell: /bin/bash
+        state: present
+
+    - name: Set the timezone to UTC
+      community.general.timezone:
+        name: Etc/UTC
+      # If the collection isn't installed, fall back to:
+      # ansible.builtin.command: timedatectl set-timezone Etc/UTC
+      # args: { creates: /etc/localtime-utc-marker }
+
+    - name: Write the message of the day
+      ansible.builtin.copy:
+        dest: /etc/motd
+        mode: "0644"
+        content: "Managed by Ansible. Authorized access only.\n"
+      notify: Log motd change
+
+    - name: Initialize a marker file exactly once
+      ansible.builtin.command: touch /srv/initialized
+      args:
+        creates: /srv/initialized        # makes this command idempotent
+
+  handlers:
+    - name: Log motd change
+      ansible.builtin.debug:
+        msg: "motd was updated on {{ inventory_hostname }}"
