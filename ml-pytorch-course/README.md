@@ -99,8 +99,17 @@ directory you point TensorBoard at.
 
 ---
 
+## Practice — endlessly repeatable, auto-graded drills 🎯
+
+After each module, grind the matching notebook in **[practice/](./practice/)**. Every drill
+draws a **fresh random problem each run** — a new line to fit, new clusters to separate, a new
+clothing subset to classify — so you practice the same skill with *different predictions to
+train for* until it's automatic. A hidden grader checks your result and prints ✅/❌; worked
+solutions are in `practice/solutions/`. One notebook per module (`01`–`07`).
+
 ## Reference material
 
+- **[practice/](./practice/)** — self-graded, randomized practice notebooks (one per module)
 - **[cheatsheets/pytorch.md](./cheatsheets/pytorch.md)** — tensors, autograd, `nn`, training loop
 - **[cheatsheets/tensorboard.md](./cheatsheets/tensorboard.md)** — every `SummaryWriter` call
 - **[GLOSSARY.md](./GLOSSARY.md)** — every term in plain English

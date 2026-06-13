@@ -9,3 +9,8 @@ torchvision>=0.17
 tensorboard>=2.14
 matplotlib>=3.7      # a few labs render a figure to log into TensorBoard
 numpy>=1.24
+
+# Optional — only for the self-graded practice notebooks in practice/:
+#   pip install jupyter        # to open the .ipynb drills (any Jupyter UI works)
+#   pip install nbformat       # only if you want to regenerate them via build_notebooks.py
+# The drills also run in a plain Python REPL using practice/practice_utils.py.
