@@ -1,0 +1,11 @@
+# ML with PyTorch & TensorBoard — course dependencies
+# Install with:  pip install -r requirements.txt
+#
+# PyTorch 2.x ships CPU wheels by default, which is all this course needs.
+# For CUDA/ROCm builds, follow the selector at https://pytorch.org/get-started/locally/
+
+torch>=2.1
+torchvision>=0.17
+tensorboard>=2.14
+matplotlib>=3.7      # a few labs render a figure to log into TensorBoard
+numpy>=1.24
