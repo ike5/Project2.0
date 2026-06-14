@@ -1,0 +1,34 @@
+# Routes outside traffic to the right Service by path. WebSocket upgrades on /ws/ are
+# passed through by the nginx ingress automatically.
+#   - /api, /ws, /admin, /static  → web (Django)
+#   - everything else             → frontend (Next.js)
+# Add `127.0.0.1 slack.local` to /etc/hosts to reach it via http://slack.local.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: slack
+  namespace: slack
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"   # keep WebSockets open
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: slack.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: {service: {name: web, port: {number: 8000}}}
+          - path: /ws
+            pathType: Prefix
+            backend: {service: {name: web, port: {number: 8000}}}
+          - path: /admin
+            pathType: Prefix
+            backend: {service: {name: web, port: {number: 8000}}}
+          - path: /static
+            pathType: Prefix
+            backend: {service: {name: web, port: {number: 8000}}}
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: frontend, port: {number: 3000}}}

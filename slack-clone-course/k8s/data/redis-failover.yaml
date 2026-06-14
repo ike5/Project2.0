@@ -1,0 +1,28 @@
+# HA Redis via the Spotahome redis-operator (Module 14).
+#
+# Install the operator first (Helm):
+#   helm repo add redis-operator https://spotahome.github.io/redis-operator
+#   helm install redis-operator redis-operator/redis-operator -n slack
+#
+# A RedisFailover runs N Redis replicas guarded by N Sentinels. Sentinel watches the
+# master and, on failure, elects a replica as the new master. Clients discover the
+# current master through Sentinel — so a master pod dying is self-healing.
+apiVersion: databases.spotahome.com/v1
+kind: RedisFailover
+metadata:
+  name: slack-redis
+  namespace: slack
+spec:
+  sentinel:
+    replicas: 3
+  redis:
+    replicas: 3
+    storage:
+      persistentVolumeClaim:
+        metadata:
+          name: redis-data
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi

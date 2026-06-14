@@ -1,0 +1,23 @@
+# PodDisruptionBudgets (Module 15): keep the app available during VOLUNTARY
+# disruptions (node drains, cluster upgrades). They guarantee at least one pod of each
+# app survives so a node drain can't take the whole service down at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: web, namespace: slack}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: web}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: frontend, namespace: slack}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: frontend}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: worker, namespace: slack}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: worker}}

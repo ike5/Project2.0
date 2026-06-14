@@ -1,0 +1,37 @@
+# NetworkPolicies (Module 16): default-deny, then allow only the flows the app needs.
+# Requires a CNI that enforces them (Calico/Cilium; kind's default kindnet does NOT —
+# install Calico to actually see these enforced).
+
+# 1) Default deny all ingress in the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: slack}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# 2) Postgres only accepts connections from web/worker/beat.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: postgres-allow-backend, namespace: slack}
+spec:
+  podSelector:
+    matchLabels: {cnpg.io/cluster: slack-pg}   # CloudNativePG pods
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchExpressions: [{key: app, operator: In, values: [web, worker, beat]}]}
+      ports: [{protocol: TCP, port: 5432}]
+---
+# 3) The web pods accept traffic only from the ingress controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: web-allow-ingress, namespace: slack}
+spec:
+  podSelector: {matchLabels: {app: web}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports: [{protocol: TCP, port: 8000}]

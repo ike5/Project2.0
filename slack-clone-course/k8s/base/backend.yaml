@@ -1,0 +1,103 @@
+# The Django backend, in three roles from one image (Module 12). The image is built
+# locally and loaded into kind: `kind load docker-image slack-backend:dev --name slack`.
+# imagePullPolicy: IfNotPresent uses that loaded image instead of pulling from a registry.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: slack
+  labels: {app: web}
+spec:
+  replicas: 2                     # 2+ for HA; Module 15 adds the HPA to autoscale
+  selector: {matchLabels: {app: web}}
+  strategy:
+    type: RollingUpdate           # zero-downtime deploys (Module 15)
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers:
+        - name: web
+          image: slack-backend:dev
+          imagePullPolicy: IfNotPresent
+          args: ["web"]
+          ports: [{containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: backend-config}
+            - secretRef: {name: backend-secret}
+          # Probes use the /api/health/ endpoint we built in Module 02.
+          readinessProbe:
+            httpGet: {path: /api/health/, port: 8000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/health/, port: 8000}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: {cpu: "100m", memory: "192Mi"}
+            limits: {cpu: "500m", memory: "512Mi"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: slack
+  labels: {app: worker}
+spec:
+  replicas: 2                     # Celery workers scale horizontally
+  selector: {matchLabels: {app: worker}}
+  template:
+    metadata: {labels: {app: worker}}
+    spec:
+      # Graceful shutdown: let in-flight tasks finish before the pod dies (Module 15).
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: slack-backend:dev
+          imagePullPolicy: IfNotPresent
+          args: ["worker"]
+          envFrom:
+            - configMapRef: {name: backend-config}
+            - secretRef: {name: backend-secret}
+          # A worker has no HTTP port; liveness pings the broker via celery inspect.
+          livenessProbe:
+            exec: {command: ["sh", "-c", "celery -A config inspect ping -d celery@$HOSTNAME"]}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            requests: {cpu: "100m", memory: "192Mi"}
+            limits: {cpu: "500m", memory: "512Mi"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  namespace: slack
+  labels: {app: beat}
+spec:
+  replicas: 1                     # MUST be exactly one — two Beats = duplicate schedules
+  selector: {matchLabels: {app: beat}}
+  strategy: {type: Recreate}      # never run two beats at once
+  template:
+    metadata: {labels: {app: beat}}
+    spec:
+      containers:
+        - name: beat
+          image: slack-backend:dev
+          imagePullPolicy: IfNotPresent
+          args: ["beat"]
+          envFrom:
+            - configMapRef: {name: backend-config}
+            - secretRef: {name: backend-secret}
+          resources:
+            requests: {cpu: "50m", memory: "128Mi"}
+            limits: {cpu: "200m", memory: "256Mi"}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: web, namespace: slack}
+spec:
+  selector: {app: web}
+  ports: [{port: 8000, targetPort: 8000}]

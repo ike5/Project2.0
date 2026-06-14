@@ -1,0 +1,25 @@
+# Module 14: repoint the app at the operator-managed HA data services, replacing the
+# simple single-pod DATABASE_URL/REDIS_URL from base/config.yaml.
+#
+# - CloudNativePG exposes a `<cluster>-rw` service that ALWAYS points at the current
+#   primary (it follows failover), so the app's writes never go to a stale replica.
+# - The redis-operator exposes the master via Sentinel; for the channel layer/cache we
+#   point at the master service it creates (rfr-slack-redis).
+#
+# Apply this ConfigMap to override the base one, then restart web/worker/beat:
+#   kubectl rollout restart deploy/web deploy/worker deploy/beat -n slack
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: slack
+data:
+  DEBUG: "false"
+  ALLOWED_HOSTS: "slack.local,web,localhost,127.0.0.1"
+  # -rw follows the primary across failovers:
+  DATABASE_URL: "postgres://slack:slackpass@slack-pg-rw:5432/slack"
+  REDIS_URL: "redis://rfr-slack-redis:6379/0"
+  EMAIL_HOST: "mailhog"
+  EMAIL_PORT: "1025"
+  S3_ENDPOINT_URL: "http://minio:9000"
+  FRONTEND_ORIGIN: "http://slack.local"

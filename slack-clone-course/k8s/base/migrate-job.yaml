@@ -1,0 +1,21 @@
+# Run database migrations exactly once per deploy, before the web pods roll out.
+# A Job runs to completion (unlike a Deployment). In CI/CD you apply this and wait for
+# it to succeed before updating the web Deployment.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: slack
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: slack-backend:dev
+          imagePullPolicy: IfNotPresent
+          args: ["migrate"]          # entrypoint runs migrate + collectstatic
+          envFrom:
+            - configMapRef: {name: backend-config}
+            - secretRef: {name: backend-secret}
