@@ -1,0 +1,34 @@
+# Lumen Mug — Product Manual
+
+## Overview
+The Lumen Mug is a self-heating travel mug made by Northwind Devices. It keeps
+your drink at a temperature you choose, anywhere from 50°C to 65°C, for up to
+six hours on a single charge. The mug holds 414 millilitres (14 fluid ounces).
+It ships in three colours: Slate, Sand, and Forest.
+
+## Battery and charging
+The Lumen Mug contains a removable 3200 mAh lithium-ion battery. It charges on
+the included magnetic charging coaster over roughly 90 minutes from empty to
+full. A full charge holds the set temperature for about six hours, or keeps the
+drink merely warm for up to ten hours. The LED ring on the base glows amber
+while charging and turns solid white when the battery is full.
+
+## Setting the temperature
+Press and hold the single button on the base for two seconds to wake the mug.
+Each short press then cycles the target temperature up by 5°C, wrapping back to
+50°C after 65°C. The LED ring colour indicates the setting: blue is 50°C, green
+is 55°C, orange is 60°C, and red is 65°C. The mug remembers your last setting
+between uses.
+
+## Care and cleaning
+The Lumen Mug is NOT dishwasher safe. Hand-wash the cup with warm soapy water
+and avoid submerging the base, which holds the electronics. Do not put the mug
+in a microwave. The lid and the silicone seal are both dishwasher safe on the
+top rack only.
+
+## Warranty and support
+Northwind Devices offers a two-year limited warranty on the Lumen Mug, covering
+manufacturing defects but not water damage from submerging the base. Register
+your mug within 30 days of purchase to extend the warranty to three years.
+Support is reachable at support@northwind.example and replies within two
+business days.

@@ -1,0 +1,23 @@
+# Building LLM Apps with LangChain & LangGraph (local, with Ollama) — dependencies
+# Install with:  pip install -r requirements.txt
+#
+# Requires Python 3.10+ (LangGraph needs 3.10+).
+# Up to date for 2026: LangChain 1.x, langchain-ollama 1.1+, current LangGraph.
+#
+# NO API KEY NEEDED. Everything runs against a LOCAL Ollama server (http://localhost:11434).
+# Before running the labs, install Ollama (https://ollama.com) and pull the two models:
+#     ollama pull llama3.1            # chat model used in Modules 00-03, 06-07
+#     ollama pull nomic-embed-text    # embedding model used in Modules 04, 07
+
+langchain>=1.0                  # core framework (LCEL, create_agent, etc.)
+langchain-core>=1.0             # messages, prompts, parsers, runnables, tools
+langchain-ollama>=1.1           # ChatOllama + OllamaEmbeddings (the local model wrappers)
+langchain-community>=0.3        # document loaders used in the RAG module
+langchain-text-splitters>=0.3   # splitting documents into chunks (Module 04)
+langgraph>=0.6                  # StateGraph, ToolNode, checkpointers (Modules 05-07)
+pydantic>=2                     # schemas for structured output (Module 03)
+
+# Optional — tracing/observability. Not required by any lab.
+#   Set these to see every chain/graph step in the LangSmith UI (smith.langchain.com):
+#   export LANGSMITH_TRACING=true
+#   export LANGSMITH_API_KEY="ls-..."

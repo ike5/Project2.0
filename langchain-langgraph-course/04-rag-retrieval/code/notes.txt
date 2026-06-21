@@ -1,0 +1,23 @@
+Lumina is a rechargeable smart desk lamp made by the fictional company Northwind Labs.
+It was first released in March 2023 and is sold only through the company's website.
+
+The Lumina lamp has a battery that lasts about 18 hours on a single charge at medium
+brightness. Charging from empty to full takes roughly 2.5 hours over USB-C.
+
+Lumina supports five brightness levels and three color temperatures: warm (2700K),
+neutral (4000K), and cool (5000K). You cycle temperatures by double-tapping the base.
+
+The lamp connects to the Northwind app over Bluetooth. Through the app you can set
+schedules, create lighting scenes, and check the remaining battery percentage.
+
+Northwind Labs offers a two-year limited warranty on the Lumina. The warranty covers
+manufacturing defects but does not cover water damage or a cracked lampshade.
+
+If the Lumina will not turn on, hold the power button for ten seconds to force a reset.
+If that fails, charge it for at least thirty minutes before trying again.
+
+The Lumina weighs 1.1 kilograms and stands 42 centimeters tall. The base is machined
+aluminum and the shade is recycled polycarbonate. It ships in plastic-free packaging.
+
+Northwind Labs was founded in 2019 in Portland, Oregon. The Lumina is its first
+consumer product; the company previously made lighting controllers for offices.
