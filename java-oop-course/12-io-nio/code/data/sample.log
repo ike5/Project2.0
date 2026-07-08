@@ -1,0 +1,6 @@
+INFO  app started
+WARN  deprecated method called
+ERROR something bad happened
+INFO  request handled
+DEBUG retrying
+ERROR another bad thing

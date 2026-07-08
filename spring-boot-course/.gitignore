@@ -1,0 +1,47 @@
+# Local dev — only data services, run the app natively
+00-setup/compose.dev.yml
+
+# Build output
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar.bak
+
+# Docker
+.env
+docker-compose.override.yml
+
+# Local data
+*.h2.db
+pgdata/
+kafkadata/
+miniodata/
+
+# Coverage
+target/site/jacoco/
+
+# Spring Boot devtools
+spring-boot-devtools.properties
