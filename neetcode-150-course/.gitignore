@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Java
+*.class
+out/
+build/
+.gradle/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# Editors / OS
+.vscode/
+.DS_Store
+*.swp
