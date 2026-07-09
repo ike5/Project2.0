@@ -1,0 +1,16 @@
+# Build output
+**/out/
+**/build/
+**/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Java
+*.class
+hs_err_pid*
