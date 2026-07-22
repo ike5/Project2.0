@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 10 — Bounces, Springs & Advanced Motion · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — bounces, springs & advanced motion
+     ========================================================= */
+
+  /* Shared base so every demo button starts from the accessible baseline.
+     (This is the Module 00 .btn, condensed.) */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .7em 1.3em; border-radius: 10px;
+    background: #4f46e5; color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+
+  /* The overshoot curve we reuse everywhere: an "ease-out-back". */
+  :root { --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+  /* --- 1 · Bounce on hover (single transition, ease-out-back) --- */
+  .bounce {
+    transition: transform .4s var(--ease-out-back);
+    will-change: transform;
+  }
+  .bounce:hover, .bounce:focus-visible { transform: translateY(-6px) scale(1.06); }
+
+  /* --- 2 · Settling bounce (decaying overshoots) — replays on click --- */
+  @keyframes settle {
+    0%   { transform: translateY(-45%); }
+    30%  { transform: translateY(0); }
+    45%  { transform: translateY(-18%); }
+    60%  { transform: translateY(0); }
+    75%  { transform: translateY(-7%); }
+    88%  { transform: translateY(0); }
+    95%  { transform: translateY(-2%); }
+    100% { transform: translateY(0); }
+  }
+  .drop:hover, .drop:focus-visible {
+    animation: settle 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* --- 3 · Elastic pop-in entrance (runs on load) --- */
+  @keyframes pop-in {
+    0%   { transform: scale(0);    opacity: 0; }
+    60%  { transform: scale(1.1);  opacity: 1; }
+    80%  { transform: scale(0.95);            }
+    100% { transform: scale(1);               }
+  }
+  .pop {
+    background: linear-gradient(135deg, #10b981, #059669);
+    animation: pop-in .5s var(--ease-out-back) both;
+    transform-origin: center;
+  }
+  .pop:nth-child(2) { animation-delay: .12s; }
+  .pop:nth-child(3) { animation-delay: .24s; }
+
+  /* --- 4 · Springy press & release (:active) --- */
+  .springy {
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+    transition: transform .45s var(--ease-out-back);
+    will-change: transform;
+  }
+  .springy:hover, .springy:focus-visible { transform: scale(1.06); }
+  .springy:active {
+    transform: scale(.9);
+    transition: transform .08s ease;   /* press down: fast, no bounce */
+  }
+
+  /* --- 5 · "Juicy" tactile hover (transform + growing shadow + spring) --- */
+  .juicy {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    box-shadow: 0 2px 8px rgba(99,102,241,.35);
+    transition:
+      transform  .35s var(--ease-out-back),
+      box-shadow .35s var(--ease-out-back);
+    will-change: transform;
+  }
+  .juicy:hover, .juicy:focus-visible {
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 0 14px 30px rgba(99,102,241,.5);
+  }
+  .juicy:active {
+    transform: translateY(-1px) scale(1.01);
+    box-shadow: 0 6px 14px rgba(99,102,241,.45);
+    transition: transform .09s ease, box-shadow .09s ease;
+  }
+
+  /* --- 6 · Jelly / wobble (skew + opposing scale) --- */
+  @keyframes jelly {
+    0%   { transform: scale(1, 1); }
+    25%  { transform: scale(1.12, .88) skewX(-6deg); }
+    40%  { transform: scale(.92, 1.08) skewX(4deg); }
+    55%  { transform: scale(1.04, .96) skewX(-2deg); }
+    70%  { transform: scale(.98, 1.02) skewX(1deg); }
+    85%  { transform: scale(1.01, .99); }
+    100% { transform: scale(1, 1); }
+  }
+  .jelly {
+    background: linear-gradient(135deg, #ec4899, #db2777);
+  }
+  .jelly:hover, .jelly:focus-visible { animation: jelly .6s ease both; }
+
+  /* --- 7 · Staggered icon + label reveal --- */
+  .reveal {
+    overflow: hidden;
+    background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  }
+  .reveal .icon, .reveal .label { display: inline-block; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(120%); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .reveal:hover .icon, .reveal:focus-visible .icon {
+    animation: rise .5s var(--ease-out-back) both;
+  }
+  .reveal:hover .label, .reveal:focus-visible .label {
+    animation: rise .5s var(--ease-out-back) .12s both;
+  }
+
+  /* --- 8 · Combined transforms: "tada" (translate→rotate→scale, order matters) --- */
+  @keyframes tada {
+    0%   { transform: scale(1) rotate(0); }
+    15%  { transform: scale(.95) rotate(-4deg); }
+    35%  { transform: scale(1.1) rotate(4deg); }
+    60%  { transform: scale(1.03) rotate(-2deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+  .tada {
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    transform-origin: center;
+  }
+  .tada:hover, .tada:focus-visible { animation: tada .6s ease both; }
+
+  /* --- 9 · GUARD: honor reduced-motion for every effect above --- */
+  @media (prefers-reduced-motion: reduce) {
+    .bounce, .springy, .juicy {
+      transition-duration: .01ms;
+    }
+    .drop:hover, .drop:focus-visible,
+    .jelly:hover, .jelly:focus-visible,
+    .tada:hover, .tada:focus-visible,
+    .reveal:hover .icon, .reveal:focus-visible .icon,
+    .reveal:hover .label, .reveal:focus-visible .label {
+      animation: none;
+    }
+    /* entrances must still end up visible, never stranded at 0% */
+    .pop { animation: none; opacity: 1; transform: none; }
+    .reveal .icon, .reveal .label { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 10 — Bounces, Springs &amp; Advanced Motion</h1>
+    <p>Overshoot + settle, everywhere. Hover and press the buttons; reload to replay the
+       <code>pop-in</code> entrance. All effects degrade under
+       <code>prefers-reduced-motion</code>.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Bounce on hover — one ease-out-back transition</h2>
+      <p class="note">A single <code>transition</code> on
+         <code>cubic-bezier(0.34, 1.56, 0.64, 1)</code>. The <code>1.56</code> shoots the
+         value past the target, then it settles. Cheap, interruptible, physical.</p>
+      <div class="row">
+        <button class="btn bounce" type="button">Bounce me 🎈</button>
+        <button class="btn bounce" type="button">Hover / tab to me</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Settling bounce — decaying overshoots</h2>
+      <p class="note">Hover to drop it. Overshoots decay 45 → 18 → 7 → 2 %, so it reads as a
+         ball losing energy and coming to rest — not a machine.</p>
+      <div class="row">
+        <button class="btn drop" type="button">Drop &amp; settle 🏀</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Elastic pop-in entrance</h2>
+      <p class="note">Runs on load (reload to replay): <code>scale 0 → 1.1 → 0.95 → 1</code>
+         with a fade. Overshoot past 100%, dip under, settle. Staggered by 120 ms each.</p>
+      <div class="row">
+        <button class="btn pop" type="button">Pop ✨</button>
+        <button class="btn pop" type="button">In ✨</button>
+        <button class="btn pop" type="button">Sequence ✨</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Springy press &amp; release (:active)</h2>
+      <p class="note">Press: scales <em>down</em> fast (no bounce going in). Release: springs
+         back out on the ease-out-back curve, popping past resting size. That contrast is
+         what feels "clicky."</p>
+      <div class="row">
+        <button class="btn springy" type="button">Press me 👇</button>
+        <button class="btn springy" type="button">And release ☝️</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · "Juicy" tactile hover</h2>
+      <p class="note">Rises + grows + casts a bigger, softer shadow, all on one springy
+         curve. The <em>growing shadow</em> is what reads as real elevation off the page.</p>
+      <div class="row">
+        <button class="btn juicy" type="button">Juicy hover 🧃</button>
+        <button class="btn juicy" type="button">Lift off 🚀</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Jelly / wobble</h2>
+      <p class="note">Skew oscillation with opposing width/height scale — squash wide, stretch
+         tall — preserving apparent volume. Playful and gummy. Kept under 0.6 s.</p>
+      <div class="row">
+        <button class="btn jelly" type="button">Wobble me 🍮</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · Staggered icon + label reveal</h2>
+      <p class="note">Hover: the icon springs up, the label chases it 120 ms later. The
+         button clips them (<code>overflow: hidden</code>) so they slide in from below.
+         Stagger is the cheapest way to look expensive.</p>
+      <div class="row">
+        <button class="btn reveal" type="button">
+          <span class="icon" aria-hidden="true">📦</span>
+          <span class="label">Reveal in order</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>8 · Combined transforms — order matters</h2>
+      <p class="note">A "tada" pop stacks <code>scale</code> + <code>rotate</code> in one
+         transform. Applied right-to-left in the previous function's space — reorder them and
+         a spin becomes an orbit.</p>
+      <div class="row">
+        <button class="btn tada" type="button">Ta-da 🎉</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source to read the CSS — lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Turn on "reduce motion" in your OS and reload to see
+    every effect degrade safely. Edit, save, refresh.
+  </footer>
+</body>
+</html>
