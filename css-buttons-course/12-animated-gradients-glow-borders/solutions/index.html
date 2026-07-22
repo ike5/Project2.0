@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 12 — Flowing gradient CTA + gradient border</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 1.75rem;
+    background: #0e1116; color: #e6edf3;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .row { display: flex; gap: 1.25rem; align-items: center; justify-content: center;
+         flex-wrap: wrap; }
+  .label { text-align: center; color: #8b949e; font-size: .8rem; letter-spacing: .04em;
+           text-transform: uppercase; }
+
+  /* Shared reset */
+  .btn {
+    appearance: none; border: 0; font: inherit; color: #fff; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .85em 1.8em; border-radius: 14px; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+
+  /* ---- Requirement 2 · Flowing gradient CTA (infinite loop) ---- */
+  @keyframes gradient-flow {
+    0%   { background-position:   0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position:   0% 50%; }
+  }
+  .cta {
+    border-radius: 999px; padding: .95em 2em;
+    /* 5 stops, first color repeated at the end → seamless wrap */
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #6366f1);
+    background-size: 300% 100%;
+    animation: gradient-flow 6s ease infinite;
+  }
+  .cta:hover { animation-duration: 2.5s; }   /* Requirement 4: speed up on hover */
+
+  /* Stretch · shine sweep layered onto the CTA */
+  .cta { position: relative; overflow: hidden; }
+  .cta > span { position: relative; z-index: 1; }
+  .cta::before {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    background: linear-gradient(100deg,
+      transparent 30%, rgba(255,255,255,.5) 50%, transparent 70%);
+    transform: translateX(-120%) skewX(-15deg);
+    transition: transform .7s ease;
+  }
+  .cta:hover::before { transform: translateX(120%) skewX(-15deg); }
+
+  /* ---- Requirement 3 · True gradient border (clip-box) -------- */
+  .gborder {
+    color: #fff; border: 2px solid transparent; border-radius: 14px;
+    background:
+      linear-gradient(#0e1116, #0e1116) padding-box,     /* dark fill inside */
+      linear-gradient(120deg, #6366f1, #ec4899, #f59e0b) border-box; /* gradient ring */
+    background-origin: border-box;
+    transition: background .3s ease;
+  }
+  .gborder:hover {                          /* Requirement 4: shift the gradient */
+    background:
+      linear-gradient(#0e1116, #0e1116) padding-box,
+      linear-gradient(120deg, #ec4899, #f59e0b, #6366f1) border-box;
+  }
+
+  /* ---- Stretch · rotating conic-gradient border --------------- */
+  @property --angle {
+    syntax: "<angle>"; initial-value: 0deg; inherits: false;
+  }
+  @keyframes spin { to { --angle: 360deg; } }
+  .conic { position: relative; z-index: 0; background: #0e1116; color: #fff; }
+  .conic::before {
+    content: ""; position: absolute; inset: -2px; z-index: -1; border-radius: inherit;
+    background: conic-gradient(from var(--angle), #6366f1, #ec4899, #f59e0b, #6366f1);
+    animation: spin 4s linear infinite;
+  }
+  .conic::after {  /* rotating glow */
+    content: ""; position: absolute; inset: -2px; z-index: -2; border-radius: inherit;
+    background: conic-gradient(from var(--angle), #6366f1, #ec4899, #f59e0b, #6366f1);
+    filter: blur(13px); opacity: .65; animation: spin 4s linear infinite;
+  }
+
+  /* ---- Requirement 5 · Reduced motion: stop loops, keep look --- */
+  @media (prefers-reduced-motion: reduce) {
+    .cta { animation: none; background-position: 50% 50%; }
+    .cta::before { transition: none; }
+    .cta:hover::before { transform: translateX(-120%) skewX(-15deg); }
+    .conic::before, .conic::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div>
+    <p class="label">Flowing gradient CTA (+ shine sweep on hover)</p>
+    <div class="row">
+      <button class="btn cta" type="button"><span>🚀 Start free trial</span></button>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">True gradient borders</p>
+    <div class="row">
+      <button class="btn gborder" type="button">Get the app</button>
+      <button class="btn conic" type="button">✨ Spinning edge</button>
+    </div>
+  </div>
+</body>
+</html>
