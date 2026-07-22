@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 05 — Shadows, Depth & Neumorphism · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — shadows, depth & neumorphism
+     ========================================================= */
+
+  /* Shared button base (from Module 00) so we focus on the shadows */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .7em 1.4em; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+
+  /* 1 · Anatomy: one shadow, values labeled in the note ------------- */
+  .single { box-shadow: 0 6px 16px -4px rgba(0, 0, 0, .55); }
+
+  /* 2 · Layered: tight contact + soft ambient ---------------------- */
+  .flat   { box-shadow: 0 10px 22px rgba(0, 0, 0, .45); }
+  .layered {
+    box-shadow:
+      0 1px 2px  rgba(0, 0, 0, .40),
+      0 8px 24px rgba(0, 0, 0, .30);
+  }
+
+  /* 3 · Elevation scale as reusable tokens -------------------------- */
+  :root {
+    --e1: 0 1px 2px rgba(0,0,0,.40), 0 1px 1px rgba(0,0,0,.30);
+    --e2: 0 2px 4px rgba(0,0,0,.40), 0 3px 6px rgba(0,0,0,.28);
+    --e3: 0 3px 6px rgba(0,0,0,.40), 0 6px 14px rgba(0,0,0,.30);
+    --e4: 0 5px 10px rgba(0,0,0,.42), 0 12px 24px rgba(0,0,0,.30);
+    --e5: 0 8px 16px rgba(0,0,0,.44), 0 20px 40px rgba(0,0,0,.32);
+  }
+  .level-1 { box-shadow: var(--e1); }
+  .level-2 { box-shadow: var(--e2); }
+  .level-3 { box-shadow: var(--e3); }
+  .level-4 { box-shadow: var(--e4); }
+  .level-5 { box-shadow: var(--e5); }
+
+  /* 4 · Hover lift (translateY + bigger shadow) -------------------- */
+  .lift {
+    box-shadow: var(--e2);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .lift:hover { transform: translateY(-4px); box-shadow: var(--e5); }
+
+  /* 5 · Pressed inset: sinks into the page on :active -------------- */
+  .push {
+    box-shadow: 0 5px 12px rgba(0,0,0,.5);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .push:active {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 3px 6px rgba(0,0,0,.6),
+      0 1px 2px rgba(0,0,0,.35);
+  }
+
+  /* 6 · Glow: colored shadow matching the fill, stronger on hover -- */
+  .glow {
+    background: var(--hue);
+    box-shadow: 0 0 18px -2px var(--hue);
+    transition: box-shadow .25s ease, transform .25s ease;
+  }
+  .glow:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 8px  -1px var(--hue),
+      0 0 34px  5px var(--hue);
+  }
+  .glow.rose  { --hue: #e11d48; }
+  .glow.cyan  { --hue: #06b6d4; }
+  .glow.lime  { --hue: #84cc16; color: #0e1116; }
+
+  /* 7 · Neumorphism: matching-color panel + dual light/dark shadows */
+  .neu-panel {
+    background: #e0e5ec;
+    border-radius: 16px; padding: 1.6rem;
+    display: flex; flex-wrap: wrap; gap: 1.4rem; align-items: center;
+  }
+  .neu {
+    appearance: none; border: none; font: inherit; cursor: pointer;
+    touch-action: manipulation; user-select: none;
+    background: #e0e5ec;            /* SAME as the panel — required */
+    color: #4a5568; font-weight: 700;
+    padding: .9em 1.7em; border-radius: 16px;
+    box-shadow:
+      -6px -6px 12px rgba(255, 255, 255, .9),
+       6px  6px 12px rgba(163, 177, 198, .6);
+    transition: box-shadow .15s ease;
+  }
+  .neu:hover { color: #2d3748; }
+  .neu:focus-visible { outline: 2px solid #6b7280; outline-offset: 4px; }
+  /* Pressed: the two shadows move INSIDE — the button caves in */
+  .neu:active,
+  .neu.is-pressed {
+    box-shadow:
+      inset -4px -4px 8px rgba(255, 255, 255, .9),
+      inset  4px  4px 8px rgba(163, 177, 198, .6);
+    color: #2d3748;
+  }
+
+  /* 8 · drop-shadow() follows a clip-path silhouette --------------- */
+  .shape-row { gap: 2rem; }
+  .arrow {
+    appearance: none; border: none; font: inherit; cursor: pointer;
+    color: #fff; font-weight: 700; padding: .8em 2.2em .8em 1.6em;
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+    clip-path: polygon(0 0, 85% 0, 100% 50%, 85% 100%, 0 100%);
+  }
+  .arrow:focus-visible { outline: 2px solid #f0abfc; outline-offset: 4px; }
+  /* box-shadow draws the rectangle behind the arrow — WRONG shape */
+  .arrow.box { box-shadow: 0 8px 14px rgba(0,0,0,.6); }
+  /* drop-shadow hugs the real arrow outline — RIGHT */
+  .arrow.drop { filter: drop-shadow(0 8px 10px rgba(0,0,0,.6)); }
+
+  /* 9 · Cheap lift via pseudo-element opacity (perf tease) --------- */
+  .cheap-lift { position: relative; box-shadow: var(--e1); isolation: isolate; }
+  .cheap-lift::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    box-shadow: var(--e5); opacity: 0;
+    transition: opacity .2s ease; pointer-events: none; z-index: -1;
+  }
+  .cheap-lift:hover { transform: translateY(-4px); }
+  .cheap-lift { transition: transform .2s ease; }
+  .cheap-lift:hover::after { opacity: 1; }
+
+  /* Respect users who ask for less motion */
+  @media (prefers-reduced-motion: reduce) {
+    .lift, .push, .glow, .neu, .cheap-lift, .cheap-lift::after {
+      transition: none;
+    }
+    .lift:hover, .cheap-lift:hover, .glow:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 05 — Shadows, Depth &amp; Neumorphism</h1>
+    <p>Depth is light and shadow. Hover the lift cards, press the inset ones, and compare the
+       two arrows to see why <code>drop-shadow()</code> exists. Tab through to keep the
+       <code>:focus-visible</code> rings.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · box-shadow anatomy</h2>
+      <p class="note">One shadow, five values:
+         <code>offset-x offset-y blur spread color</code> —
+         here <code>0 6px 16px -4px rgba(0,0,0,.55)</code>. Positive <code>offset-y</code>
+         drops it down (light from above); the <code>-4px</code> spread pulls it in so it
+         only peeks out the bottom.</p>
+      <div class="row">
+        <button class="btn single" type="button">Elevated</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Layer shadows for realistic softness</h2>
+      <p class="note">Left: a single shadow — flat and cheap. Right: a tight contact shadow
+         <em>plus</em> a big diffuse one. Two layers is what real design systems ship.</p>
+      <div class="row">
+        <button class="btn flat" type="button">Single shadow</button>
+        <button class="btn layered" type="button">Layered (2 shadows)</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · An elevation scale (levels 1–5)</h2>
+      <p class="note">Five reusable tokens (<code>--e1</code>…<code>--e5</code>). Offset,
+         blur, and darkness all grow together — higher = floats farther and blocks more
+         light. Apply depth by name, tune it in one place.</p>
+      <div class="row">
+        <button class="btn level-1" type="button">Level 1</button>
+        <button class="btn level-2" type="button">Level 2</button>
+        <button class="btn level-3" type="button">Level 3</button>
+        <button class="btn level-4" type="button">Level 4</button>
+        <button class="btn level-5" type="button">Level 5</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Hover lift (translateY + bigger shadow)</h2>
+      <p class="note">Hover: the button rises (<code>translateY(-4px)</code>) and its shadow
+         swaps to a higher elevation token. Motion + depth together read as "coming toward
+         you."</p>
+      <div class="row">
+        <button class="btn lift" type="button">Hover to lift ↑</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Pressed inset (sinks on :active)</h2>
+      <p class="note">Press and hold: the outer shadow disappears, an <code>inset</code>
+         shadow carves a well from the top edge, and a 2px nudge down completes the sink.</p>
+      <div class="row">
+        <button class="btn push" type="button">Press me down</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Glow — a colored shadow that matches the fill</h2>
+      <p class="note">The shadow color is the same custom property as the background, with a
+         big blur and no offset so it radiates. Hover to intensify the halo. (Glow reads best
+         on dark — which is exactly where we are.)</p>
+      <div class="row">
+        <button class="btn glow rose" type="button">Rose</button>
+        <button class="btn glow cyan" type="button">Cyan</button>
+        <button class="btn glow lime" type="button">Lime</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · Neumorphism (soft UI) — needs a matching background</h2>
+      <p class="note">This panel is <code>#e0e5ec</code> and so is every button on it — that
+         shared color is <em>mandatory</em>. Shape comes only from a light shadow up-left and
+         a dark one down-right. The middle button starts in its <code>:active</code> pressed
+         state (both shadows moved <code>inset</code>); press the others to match it.</p>
+      <div class="neu-panel">
+        <button class="neu" type="button">Raised</button>
+        <button class="neu is-pressed" type="button">Pressed</button>
+        <button class="neu" type="button">Press &amp; hold me</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>8 · drop-shadow() follows the shape; box-shadow doesn't</h2>
+      <p class="note">Both arrows are clipped with <code>clip-path</code>. Left uses
+         <code>box-shadow</code> — it draws the shadow of the <em>rectangle</em>, leaking past
+         the point. Right uses <code>filter: drop-shadow()</code> — it hugs the arrow's real
+         silhouette.</p>
+      <div class="row shape-row">
+        <button class="arrow box" type="button">box-shadow</button>
+        <button class="arrow drop" type="button">drop-shadow</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>9 · Cheap lift via a pseudo-element (perf tease → Module 14)</h2>
+      <p class="note">Same visual lift as card 4, but the big shadow lives on a
+         <code>::after</code> and we animate only its <code>opacity</code> — cheaper than
+         repainting a <code>box-shadow</code> every frame. Why that matters comes in Module 14.</p>
+      <div class="row">
+        <button class="btn cheap-lift" type="button">Hover (opacity-driven)</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>

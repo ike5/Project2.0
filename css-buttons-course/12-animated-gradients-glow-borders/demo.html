@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 12 — Animated Gradients, Glow & Gradient Borders · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — animated gradients, glow & borders
+     ========================================================= */
+
+  /* Shared reset for every demo button below */
+  .btn {
+    appearance: none; border: 0; font: inherit; color: #fff; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .8em 1.7em; border-radius: 14px; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+
+  /* ---- 1 & 2 · Flowing animated gradient CTA ------------------- */
+  @keyframes gradient-flow {
+    0%   { background-position:   0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position:   0% 50%; }
+  }
+  .cta-flow {
+    border-radius: 999px;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #6366f1);
+    background-size: 300% 100%;
+    animation: gradient-flow 6s ease infinite;
+  }
+  .cta-flow:hover { animation-duration: 2.5s; }
+
+  /* Hover-only version: no infinite loop, gradient glides on hover */
+  .flow-hover {
+    background: linear-gradient(90deg, #22d3ee, #6366f1, #ec4899, #22d3ee);
+    background-size: 300% 100%;
+    background-position: 0% 50%;
+    transition: background-position .6s ease;
+  }
+  .flow-hover:hover { background-position: 100% 50%; }
+
+  /* ---- 3 · Shine / sweep sheen on hover ----------------------- */
+  .shine { position: relative; overflow: hidden; background: #4f46e5; }
+  .shine::before {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg,
+      transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%);
+    transform: translateX(-120%) skewX(-15deg);
+    transition: transform .7s ease;
+  }
+  .shine:hover::before { transform: translateX(120%) skewX(-15deg); }
+  /* label above the sweeping band */
+  .shine > span { position: relative; z-index: 1; }
+
+  /* ---- 4 · Pulsing glow --------------------------------------- */
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(99,102,241,.55); }
+    50%      { box-shadow: 0 0 30px rgba(99,102,241,.95); }
+  }
+  .glow { background: #4f46e5; animation: glow-pulse 2s ease-in-out infinite; }
+  .glow:hover { animation-duration: .9s; }
+
+  /* Smoother variant: animate a blurred pseudo-element's opacity */
+  @keyframes soft-pulse { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
+  .glow2 { position: relative; background: #db2777; }
+  .glow2::after {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    border-radius: inherit; background: #ec4899; filter: blur(16px); opacity: .5;
+    animation: soft-pulse 2s ease-in-out infinite;
+  }
+  .glow2:hover::after { opacity: 1; filter: blur(22px); }
+
+  /* ---- 5 · TRUE gradient borders ------------------------------ */
+  /* Technique A — double background + background-clip */
+  .gborder {
+    color: #fff; border: 2px solid transparent; border-radius: 14px;
+    background:
+      linear-gradient(#161b22, #161b22) padding-box,
+      linear-gradient(120deg, #6366f1, #ec4899, #f59e0b) border-box;
+    background-origin: border-box;
+    transition: background .3s ease;
+  }
+  .gborder:hover {
+    background:
+      linear-gradient(#161b22, #161b22) padding-box,
+      linear-gradient(120deg, #ec4899, #f59e0b, #6366f1) border-box;
+  }
+
+  /* Technique B — masked ::before ring (works over anything) */
+  .gborder-mask { position: relative; background: transparent; color: #fff; }
+  .gborder-mask::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 2px;
+    background: linear-gradient(120deg, #22d3ee, #6366f1, #ec4899);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* ---- 6 · Rotating conic-gradient border + glow -------------- */
+  @property --angle {
+    syntax: "<angle>";
+    initial-value: 0deg;
+    inherits: false;
+  }
+  @keyframes spin { to { --angle: 360deg; } }
+
+  .conic { position: relative; z-index: 0; background: #0e1116; color: #fff; }
+  .conic::before {
+    content: ""; position: absolute; inset: -2px; z-index: -1; border-radius: inherit;
+    background: conic-gradient(from var(--angle), #6366f1, #ec4899, #f59e0b, #6366f1);
+    animation: spin 4s linear infinite;
+  }
+  .conic::after {
+    content: ""; position: absolute; inset: -2px; z-index: -2; border-radius: inherit;
+    background: conic-gradient(from var(--angle), #6366f1, #ec4899, #f59e0b, #6366f1);
+    filter: blur(14px); opacity: .7;
+    animation: spin 4s linear infinite;
+  }
+
+  /* ---- 7 · Reduced-motion: stop loops, keep the look ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    .cta-flow { animation: none; background-position: 50% 50%; }
+    .flow-hover { transition: none; }
+    .shine::before { transition: none; }
+    .shine:hover::before { transform: translateX(-120%) skewX(-15deg); }
+    .glow { animation: none; box-shadow: 0 0 20px rgba(99,102,241,.8); }
+    .glow2::after { animation: none; opacity: .7; }
+    .conic::before, .conic::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 12 — Animated Gradients, Glow &amp; Gradient Borders</h1>
+    <p>Gradients that flow, edges that glow, and <em>true</em> gradient borders — on the dark
+       shell so the light reads. Hover everything; tab through to see <code>:focus-visible</code>.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Flowing animated-gradient CTA</h2>
+      <p class="note">You can't tween a gradient, so we make it <code>300%</code> wide and
+         animate <code>background-position</code>. Left loops forever (slow = premium, faster
+         on hover); right only glides on hover.</p>
+      <div class="row">
+        <button class="btn cta-flow" type="button">Start free trial</button>
+        <button class="btn flow-hover" type="button">Hover to glide</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Shine / sweep sheen on hover</h2>
+      <p class="note">A skewed translucent-white band on a <code>::before</code> sweeps across
+         via <code>translateX</code>. The button's <code>overflow: hidden</code> clips the
+         band to its rounded shape.</p>
+      <div class="row">
+        <button class="btn shine" type="button"><span>Hover for the glint</span></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Pulsing glow</h2>
+      <p class="note">Left animates <code>box-shadow</code> directly; right animates a blurred
+         pseudo-element's <code>opacity</code> (smoother — <code>opacity</code> is
+         compositor-only). Both intensify on hover.</p>
+      <div class="row">
+        <button class="btn glow" type="button">Pulsing shadow</button>
+        <button class="btn glow2" type="button">Blurred halo</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · True gradient borders</h2>
+      <p class="note"><strong>A</strong> — double background with
+         <code>padding-box</code>/<code>border-box</code> clip (rounded corners work).
+         <strong>B</strong> — a masked <code>::before</code> ring that works over
+         <em>any</em> background. Hover A to shift its gradient.</p>
+      <div class="row">
+        <button class="btn gborder" type="button">Clip-box border</button>
+        <button class="btn gborder-mask" type="button">Masked-ring border</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Rotating conic-gradient border &amp; glow</h2>
+      <p class="note">A <code>conic-gradient(from var(--angle))</code> spun by animating a
+         <code>@property</code>-registered <code>--angle</code> 0→360°. A blurred second copy
+         adds a rotating halo. Older browsers degrade to a static border.</p>
+      <div class="row">
+        <button class="btn conic" type="button">✨ Spinning edge</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Turn on "reduce motion" in your OS to see every loop
+    settle into a tasteful static state. Edit, save, refresh.
+  </footer>
+</body>
+</html>

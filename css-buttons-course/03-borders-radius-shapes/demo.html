@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 03 — Borders, Radius & Shapes · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — borders, radius & shapes
+     ========================================================= */
+
+  /* A shared base so every demo button is a correct, accessible button.
+     (This is the Module 00 baseline, condensed.) */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 8px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { background: #3730a3; }
+  /* outline is drawn OUTSIDE the box and reserves no space — perfect focus ring */
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+
+  /* ---- 1 · border vs. outline ---------------------------------- */
+  .btn--bordered {
+    background: transparent; color: var(--ink);
+    /* shorthand: width style color. Style must be present or nothing renders. */
+    border: 3px solid #f59e0b;
+  }
+  /* an outline drawn on top of the box — note it does NOT push neighbors around */
+  .btn--outlined {
+    background: transparent; color: var(--ink); border: none;
+    outline: 3px solid #22d3ee; outline-offset: 4px;
+  }
+
+  /* ---- 2 · radius fundamentals + per-corner -------------------- */
+  .r0    { border-radius: 0; }
+  .r8    { border-radius: 8px; }
+  .r16   { border-radius: 16px; }
+  .r24   { border-radius: 24px; }
+  .rpill { border-radius: 999px; }
+  /* TL TR BR BL — clockwise from top-left */
+  .r-corners { border-radius: 22px 4px 22px 4px; }
+  /* elliptical: horizontal radii / vertical radii */
+  .r-ellipse { border-radius: 40px / 18px; }
+
+  /* ---- 3 · pill ------------------------------------------------ */
+  .btn--pill { padding: .7em 1.4em; border-radius: 999px; }
+
+  /* ---- 4 · circular icon buttons ------------------------------- */
+  .btn--icon {
+    width: 44px; height: 44px; padding: 0;   /* explicit square */
+    border-radius: 50%; font-size: 1.15rem;
+  }
+  .btn--icon-auto {
+    aspect-ratio: 1; padding: .55em;         /* modern: force 1:1, size by content */
+    border-radius: 50%; font-size: 1.15rem;
+  }
+  .btn--icon-lg { width: 60px; height: 60px; font-size: 1.5rem; }
+
+  /* ---- 5 · ghost / outline buttons ----------------------------- */
+  .btn--ghost {
+    background: transparent; color: #818cf8;
+    border: 2px solid currentColor;          /* border matches text — one source of truth */
+  }
+  /* solid flood on hover — the 2px border already existed, so NO layout jump */
+  .btn--ghost:hover { background: #818cf8; color: #0e1116; }
+  .btn--ghost:active { background: #6d78e0; }
+
+  /* softer tint variant */
+  .btn--ghost-soft {
+    background: transparent; color: #34d399; border: 2px solid currentColor;
+  }
+  .btn--ghost-soft:hover  { background: rgba(52, 211, 153, .14); color: #34d399; }
+  .btn--ghost-soft:active { background: rgba(52, 211, 153, .24); }
+
+  /* ---- 6 · cut / beveled corners ------------------------------- */
+  .btn--cut {
+    background: #ef4444; padding: .7em 1.4em;
+    clip-path: polygon(
+      12px 0, 100% 0,
+      100% calc(100% - 12px), calc(100% - 12px) 100%,
+      0 100%, 0 12px
+    );
+  }
+  .btn--cut:hover  { background: #dc2626; }
+  .btn--cut:active { background: #b91c1c; }
+
+  /* ---- 7 · custom shapes: arrow, tag, ticket ------------------- */
+  .btn--arrow {
+    background: #0ea5e9; padding: .7em 1.9em .7em 1.25em;
+    clip-path: polygon(
+      0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%
+    );
+  }
+  .btn--arrow:hover  { background: #0284c7; }
+  .btn--arrow:active { background: #0369a1; }
+
+  .btn--tag {
+    background: #8b5cf6; padding: .7em 1.25em .7em 1.9em;
+    clip-path: polygon(
+      14px 0, 100% 0, 100% 100%, 14px 100%, 0 50%
+    );
+  }
+  .btn--tag:hover  { background: #7c3aed; }
+  .btn--tag:active { background: #6d28d9; }
+
+  /* ticket: notch bitten out of each side, plus a punched hole via ::before */
+  .btn--ticket {
+    position: relative;
+    background: #f59e0b; color: #1c1400; padding: .7em 1.6em;
+    clip-path: polygon(
+      0 0, 100% 0,
+      100% 38%, calc(100% - 6px) 50%, 100% 62%,   /* right-edge notch */
+      100% 100%, 0 100%,
+      0 62%, 6px 50%, 0 38%                        /* left-edge notch */
+    );
+  }
+  .btn--ticket:hover  { background: #d97706; }
+  .btn--ticket:active { background: #b45309; }
+  .btn--ticket::before {                            /* decorative punched hole */
+    content: ""; position: absolute; left: 12px; top: 50%;
+    width: 8px; height: 8px; border-radius: 50%;
+    transform: translateY(-50%);
+    background: var(--panel);                       /* = card color → looks punched */
+    pointer-events: none;
+  }
+
+  /* teased gradient-ish edge with a pseudo-element (real gradient border → Module 12) */
+  .btn--fancy {
+    position: relative; background: #161b22; color: #fff;
+    border-radius: 10px; padding: .7em 1.4em; z-index: 0;
+  }
+  .btn--fancy::before {
+    content: ""; position: absolute; inset: -2px; z-index: -1;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f472b6, #818cf8, #34d399);
+  }
+
+  /* ---- per-corner playground (pure CSS: radio + :checked) ------ */
+  .play { display: grid; gap: 1.1rem; }
+  .play .stage { display: flex; justify-content: center; padding: .75rem 0; }
+  .btn--play {
+    padding: 1em 2.4em; font-size: 1.05rem; background: #6366f1;
+    /* driven by the checked preset via the sibling selectors below */
+    border-radius: 24px;
+    transition: border-radius .18s ease, background-color .15s ease;
+  }
+  /* visually-hidden radios; the labels are the clickable chips */
+  .play .radios { position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); }
+  .play .presets { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
+  .play .presets label {
+    cursor: pointer; user-select: none;
+    background: #0d1117; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 999px; padding: .35em 1em; font-size: .82rem;
+    transition: border-color .15s ease, background-color .15s ease;
+  }
+  .play .presets label:hover { border-color: #818cf8; }
+  /* a keyboard focus ring on the (hidden) radio lights up its label */
+  .play input:focus-visible + label { outline: 2px solid #818cf8; outline-offset: 2px; }
+
+  /* Each preset: (a) highlight its own chip, (b) reshape the preview button.
+     Radios come first in the DOM, so `~` reaches both .presets and .stage. */
+  #pc-square:checked  ~ .presets label[for="pc-square"],
+  #pc-round:checked   ~ .presets label[for="pc-round"],
+  #pc-pill:checked    ~ .presets label[for="pc-pill"],
+  #pc-leaf:checked    ~ .presets label[for="pc-leaf"],
+  #pc-tab:checked     ~ .presets label[for="pc-tab"],
+  #pc-chat:checked    ~ .presets label[for="pc-chat"] {
+    border-color: #818cf8; background: rgba(129,140,248,.16);
+  }
+  #pc-square:checked ~ .stage .btn--play { border-radius: 0; }
+  #pc-round:checked  ~ .stage .btn--play { border-radius: 12px; }
+  #pc-pill:checked   ~ .stage .btn--play { border-radius: 999px; }
+  /* TL TR BR BL — clockwise from top-left */
+  #pc-leaf:checked   ~ .stage .btn--play { border-radius: 24px 4px 24px 4px; }
+  #pc-tab:checked    ~ .stage .btn--play { border-radius: 30px 30px 4px 4px; }
+  #pc-chat:checked   ~ .stage .btn--play { border-radius: 50px 4px 50px 4px; }
+
+  /* Motion: our transitions are tiny, but honor the user's preference anyway. */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 03 — Borders, Radius &amp; Shapes</h1>
+    <p>The <strong>shape layer</strong>: edges, rounding, pills, circles, and custom
+       <code>clip-path</code> shapes. Tab through the buttons to see focus rings survive
+       even on clipped shapes.</p>
+  </header>
+
+  <main>
+    <!-- 1 -->
+    <section class="card">
+      <h2>1 · Border vs. outline</h2>
+      <p class="note">A <code>border</code> is part of the box and takes up space. An
+         <code>outline</code> is painted on top and reserves <em>none</em> — which is why
+         it's the right tool for a focus ring. The cyan ring below sits outside the box via
+         <code>outline-offset</code>.</p>
+      <div class="row">
+        <button class="btn btn--bordered" type="button">3px border</button>
+        <button class="btn btn--outlined" type="button">3px outline + offset</button>
+        <button class="btn" type="button">Tab me for a real focus ring</button>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="card">
+      <h2>2 · The rounding scale (0 → pill)</h2>
+      <p class="note">One property, <code>border-radius</code>, from square to fully
+         rounded. The last one asks for <code>999px</code> and the browser clamps it to a
+         pill.</p>
+      <div class="row">
+        <button class="btn r0" type="button">0</button>
+        <button class="btn r8" type="button">8px</button>
+        <button class="btn r16" type="button">16px</button>
+        <button class="btn r24" type="button">24px</button>
+        <button class="btn rpill" type="button">999px → pill</button>
+      </div>
+      <p class="note" style="margin:1.1rem 0 .5rem">Per-corner and elliptical corners:</p>
+      <div class="row">
+        <button class="btn r-corners" type="button">22px 4px 22px 4px</button>
+        <button class="btn r-ellipse" type="button">40px / 18px (elliptical)</button>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="card">
+      <h2>3 · The pill — clamps at any width</h2>
+      <p class="note">All three use the same <code>border-radius: 999px</code>. The radius
+         clamps to half the height, so the ends stay perfect semicircles no matter how long
+         the label is.</p>
+      <div class="row">
+        <button class="btn btn--pill" type="button">Go</button>
+        <button class="btn btn--pill" type="button">Add to cart</button>
+        <button class="btn btn--pill" type="button">A rather long pill button label</button>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="card">
+      <h2>4 · Circular icon buttons</h2>
+      <p class="note">A square box + <code>border-radius: 50%</code>. Left group uses fixed
+         <code>width/height</code>; right uses <code>aspect-ratio: 1</code>. Every one has
+         an <code>aria-label</code> because there's no visible text.</p>
+      <div class="row">
+        <button class="btn btn--icon" type="button" aria-label="Add to favorites">
+          <span aria-hidden="true">♥</span></button>
+        <button class="btn btn--icon" type="button" aria-label="Search">
+          <span aria-hidden="true">🔍</span></button>
+        <button class="btn btn--icon btn--icon-lg" type="button" aria-label="Play">
+          <span aria-hidden="true">▶</span></button>
+        <button class="btn btn--icon-auto" type="button" aria-label="Settings">
+          <span aria-hidden="true">⚙️</span></button>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="card">
+      <h2>5 · Ghost / outline buttons</h2>
+      <p class="note">Transparent fill, <code>border: 2px solid currentColor</code> (the
+         border matches the text). The border is present at rest, so hover fills the button
+         with <strong>no layout jump</strong>. First fills solid; second uses a soft tint.</p>
+      <div class="row">
+        <button class="btn" type="button">Primary (solid)</button>
+        <button class="btn btn--ghost" type="button">Ghost (fills on hover)</button>
+        <button class="btn btn--ghost-soft" type="button">Ghost (soft tint)</button>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="card">
+      <h2>6 · Cut / beveled corners</h2>
+      <p class="note">Two corners sliced off with <code>clip-path: polygon()</code>. Mixing
+         <code>px</code> and <code>%</code> via <code>calc()</code> keeps the bevel a fixed
+         size at any width. The focus ring still shows — <code>outline</code> is drawn
+         outside the clip.</p>
+      <div class="row">
+        <button class="btn btn--cut" type="button">Deploy</button>
+        <button class="btn btn--cut" type="button">Confirm order now</button>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="card">
+      <h2>7 · Custom shapes — arrow, tag, ticket</h2>
+      <p class="note">All pure <code>clip-path</code>. The ticket adds a punched hole with
+         a <code>::before</code> pseudo-element and notches on both edges. A true gradient
+         border (the pink one below is just teased) arrives in Module 12.</p>
+      <div class="row">
+        <button class="btn btn--arrow" type="button">Next</button>
+        <button class="btn btn--tag" type="button">Sale</button>
+        <button class="btn btn--ticket" type="button">Admit one</button>
+        <button class="btn btn--fancy" type="button">Gradient edge (teaser)</button>
+      </div>
+    </section>
+
+    <!-- per-corner playground — 100% CSS via radio :checked -->
+    <section class="card">
+      <h2>8 · Per-corner radius playground</h2>
+      <p class="note">Click a preset to reshape the button — no JavaScript, just
+         <code>:checked</code> radios and sibling selectors. Each preset feeds
+         <code>border-radius</code> in CSS order: top-left, top-right, bottom-right,
+         bottom-left. Tab to a chip and press arrow keys to cycle.</p>
+      <div class="play">
+        <div class="radios">
+          <input type="radio" name="pc" id="pc-square">
+          <input type="radio" name="pc" id="pc-round" checked>
+          <input type="radio" name="pc" id="pc-pill">
+          <input type="radio" name="pc" id="pc-leaf">
+          <input type="radio" name="pc" id="pc-tab">
+          <input type="radio" name="pc" id="pc-chat">
+        </div>
+        <div class="presets">
+          <label for="pc-square">square · 0</label>
+          <label for="pc-round">rounded · 12px</label>
+          <label for="pc-pill">pill · 999px</label>
+          <label for="pc-leaf">leaf · 24 4 24 4</label>
+          <label for="pc-tab">tab · 30 30 4 4</label>
+          <label for="pc-chat">chat · 50 4 50 4</label>
+        </div>
+        <div class="stage">
+          <button class="btn btn--play" type="button">Tune my corners</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source to read the CSS — lesson styles are under
+    <code>THE ACTUAL LESSON CSS</code>. Every example on this page is HTML + CSS only:
+    no JavaScript, no frameworks, no external assets.
+  </footer>
+</body>
+</html>

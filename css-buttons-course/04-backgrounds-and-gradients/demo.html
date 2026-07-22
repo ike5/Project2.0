@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 04 — Backgrounds & Gradients · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — backgrounds & gradients
+     ========================================================= */
+
+  /* Shared button skeleton (from Module 00) so we can focus on the FILL.
+     Note: no background here — each variant supplies its own. */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .7em 1.4em; border-radius: 10px;
+    color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---- 1 · color vs image ---- */
+  .fill-color { background-color: #4f46e5; }
+  .fill-image { background-image: linear-gradient(#6366f1, #4338ca); }
+
+  /* ---- 2 · linear gradients ---- */
+  .lin-keyword  { background: linear-gradient(to right, #f43f5e, #f59e0b); }
+  .lin-angle    { background: linear-gradient(135deg, #6366f1, #ec4899); }
+  .lin-multi    { background: linear-gradient(90deg, #f43f5e, #f59e0b, #22c55e, #3b82f6); }
+  .lin-weighted { background: linear-gradient(90deg, #7c3aed 30%, #ec4899); }
+
+  /* hard stop: crisp 50/50 split */
+  .lin-twotone {
+    background: linear-gradient(90deg, #6366f1 0 50%, #ec4899 50% 100%);
+  }
+  /* hard stop: repeating diagonal stripes */
+  .lin-stripes {
+    background: repeating-linear-gradient(45deg,
+      #6366f1 0 12px, #4f46e5 12px 24px);
+  }
+
+  /* ---- 3 · radial gradients ---- */
+  .rad-spotlight {
+    background: radial-gradient(circle at 50% 30%, #a78bfa, #4c1d95);
+  }
+  .rad-glossy {
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%,
+        rgba(255,255,255,.55), rgba(255,255,255,0) 70%),
+      #4f46e5;
+    box-shadow: inset 0 -2px 6px rgba(0,0,0,.25);
+  }
+
+  /* ---- 4 · conic gradients ---- */
+  .con-wheel {
+    width: 3.4em; height: 3.4em; padding: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg,
+      #f43f5e, #f59e0b, #22c55e, #3b82f6, #a855f7, #f43f5e);
+    box-shadow: inset 0 0 0 4px rgba(0,0,0,.25);
+  }
+  .con-pie {
+    width: 3.4em; height: 3.4em; padding: 0; border-radius: 50%;
+    background: conic-gradient(
+      #6366f1 0 25%, #ec4899 25% 50%, #f59e0b 50% 75%, #22c55e 75% 100%);
+  }
+
+  /* ---- 5 · layered sheen ---- */
+  .layer-sheen {
+    /* LAYER 1 (top): soft sheen on the upper half.  LAYER 2: base fill. */
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,0) 55%),
+      linear-gradient(#4f46e5, #4338ca);
+    box-shadow: 0 6px 16px rgba(79,70,229,.35), inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  .layer-multi {
+    background-color: #1e293b;   /* real fallback base */
+    background-image:
+      radial-gradient(120% 90% at 50% -30%, rgba(56,189,248,.55), transparent 60%),
+      linear-gradient(180deg, rgba(255,255,255,.10), transparent);
+    background-repeat: no-repeat;
+    box-shadow: inset 0 0 0 1px rgba(148,163,184,.25);
+  }
+
+  /* ---- 6 · gradient swap on hover ---- */
+  .swap {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    box-shadow: 0 6px 16px rgba(99,102,241,.30);
+    transition: transform .18s ease, box-shadow .18s ease;
+    /* the background-image change itself is instant — that's expected */
+  }
+  .swap:hover {
+    background: linear-gradient(135deg, #ec4899, #f59e0b);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px rgba(236,72,153,.40);
+  }
+  .swap:active { transform: translateY(0); }
+
+  /* angle-rotation variant: reads as a shift of light */
+  .tilt {
+    background: linear-gradient(120deg, #0ea5e9, #6366f1);
+    transition: transform .18s ease;
+  }
+  .tilt:hover { background: linear-gradient(300deg, #0ea5e9, #6366f1); transform: translateY(-2px); }
+  .tilt:active { transform: translateY(0); }
+
+  /* ---- 7 · gradient-clipped text ---- */
+  .text-grad {
+    background: #0d1117;                 /* dark plate so the text pops */
+    border: 1px solid var(--line);
+    font-size: 1.15rem; font-weight: 800; letter-spacing: .3px;
+  }
+  .text-grad span {
+    background: linear-gradient(90deg, #f43f5e, #f59e0b, #a855f7);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+            color: transparent;
+  }
+  .text-grad:hover span {
+    background: linear-gradient(90deg, #22d3ee, #6366f1, #ec4899);
+    -webkit-background-clip: text;
+            background-clip: text;
+  }
+
+  /* Respect users who prefer less motion */
+  @media (prefers-reduced-motion: reduce) {
+    .swap, .tilt { transition: none; }
+    .swap:hover, .tilt:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 04 — Backgrounds &amp; Gradients</h1>
+    <p>Gradients are <em>images</em>: stack them, size them, position them, clip them to
+       text. Tab to any button to see <code>:focus-visible</code>; hover the swap cards.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Color vs. image (and gradients ARE images)</h2>
+      <p class="note">Left uses <code>background-color</code> — one flat color. Right uses
+         <code>background-image: linear-gradient(...)</code>. Same slot in the box model,
+         different property.</p>
+      <div class="row">
+        <button class="btn fill-color" type="button">Flat color</button>
+        <button class="btn fill-image" type="button">Gradient image</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · linear-gradient — direction &amp; stops</h2>
+      <p class="note"><code>to right</code> vs. a <code>135deg</code> diagonal; then multiple
+         and positioned stops. <code>0deg</code> points up and turns clockwise.</p>
+      <div class="row">
+        <button class="btn lin-keyword" type="button">to right</button>
+        <button class="btn lin-angle" type="button">135deg</button>
+        <button class="btn lin-multi" type="button">4 stops</button>
+        <button class="btn lin-weighted" type="button">stop @ 30%</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2b · Hard stops — two-tone &amp; stripes</h2>
+      <p class="note">Two stops at the <em>same</em> position = a crisp edge, no blend. Now
+         the gradient is a shape tool: a clean split, or repeating stripes.</p>
+      <div class="row">
+        <button class="btn lin-twotone" type="button">Two-tone</button>
+        <button class="btn lin-stripes" type="button">Stripes</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · radial-gradient — spotlight &amp; glossy</h2>
+      <p class="note">Blends outward from a point. A soft transparent-white highlight near
+         the top over a base color reads as a lit, glossy surface.</p>
+      <div class="row">
+        <button class="btn rad-spotlight" type="button">Spotlight</button>
+        <button class="btn rad-glossy" type="button">Glossy</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · conic-gradient — wheel &amp; pie</h2>
+      <p class="note">Sweeps colors <em>around</em> a center. Smooth = color wheel; hard
+         stops = crisp pie segments. Both are just backgrounds on a round button.</p>
+      <div class="row">
+        <button class="btn con-wheel" type="button" aria-label="Color wheel"></button>
+        <button class="btn con-pie" type="button" aria-label="Pie segments"></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Layered backgrounds — the sheen button</h2>
+      <p class="note">Comma-separated layers: the <em>first</em> is on top. A faint sheen on
+         the upper half over a base gradient gives a premium, glassy finish.</p>
+      <div class="row">
+        <button class="btn layer-sheen" type="button">Top sheen</button>
+        <button class="btn layer-multi" type="button">Glow + sheen</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Swap the gradient on hover</h2>
+      <p class="note">A gradient change is <em>instant</em> (gradients don't transition —
+         that's Module 12). So we swap the fill and transition <code>transform</code> /
+         <code>box-shadow</code> to keep it lively.</p>
+      <div class="row">
+        <button class="btn swap" type="button">Hover me</button>
+        <button class="btn tilt" type="button">Rotate light</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · background-clip: text — gradient label</h2>
+      <p class="note">Clip the gradient to the glyphs and make the text fill transparent.
+         Ship the <code>-webkit-</code> prefix. Keep contrast honest for real labels.</p>
+      <div class="row">
+        <button class="btn text-grad" type="button"><span>✨ Go Premium</span></button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>

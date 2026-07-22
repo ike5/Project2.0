@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 04 — Three gradient buttons</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 2rem;
+    padding: 2rem; background: #0e1116; font-family: system-ui, sans-serif;
+  }
+  .row { display: flex; gap: 1.25rem; align-items: center; justify-content: center; flex-wrap: wrap; }
+
+  /* ---- Base button (Module 00 baseline), no fill of its own ---- */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .75em 1.5em; border-radius: 12px;
+    color: #fff; font-weight: 700; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .btn:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---- 1 · Linear CTA ---- */
+  .cta {
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    box-shadow: 0 8px 20px rgba(99,102,241,.35);
+  }
+  .cta:hover {
+    /* instant gradient swap + animated lift */
+    background: linear-gradient(315deg, #6366f1, #ec4899);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 26px rgba(236,72,153,.45);
+  }
+  .cta:active { transform: translateY(0); }
+
+  /* ---- 2 · Radial glossy (layered backgrounds) ---- */
+  .glossy {
+    background:
+      radial-gradient(ellipse 85% 60% at 50% 0%,
+        rgba(255,255,255,.55), rgba(255,255,255,0) 70%),   /* transparent-white highlight */
+      #0ea5e9;                                              /* base */
+    box-shadow: 0 8px 20px rgba(14,165,233,.35),
+                inset 0 -2px 6px rgba(0,0,0,.25),
+                inset 0 1px 0 rgba(255,255,255,.4);
+  }
+  .glossy:hover {
+    background:
+      radial-gradient(ellipse 85% 60% at 50% 0%,
+        rgba(255,255,255,.7), rgba(255,255,255,0) 70%),
+      #0284c7;
+    transform: translateY(-2px);
+  }
+  .glossy:active { transform: translateY(0); }
+
+  /* ---- 3 · Gradient-text label ---- */
+  .ghost {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    font-size: 1.1rem; font-weight: 800;
+  }
+  .ghost span {
+    background: linear-gradient(90deg, #f43f5e, #f59e0b, #a855f7);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+            color: transparent;
+  }
+  .ghost:hover {
+    border-color: #52525b;
+    transform: translateY(-2px);
+  }
+  .ghost:hover span {
+    background: linear-gradient(90deg, #22d3ee, #6366f1, #ec4899);
+    -webkit-background-clip: text;
+            background-clip: text;
+  }
+
+  /* ---- Stretch: hard-stop stripe CTA + conic pie badge ---- */
+  .cta--stripes {
+    background: repeating-linear-gradient(45deg,
+      #6366f1 0 12px, #4f46e5 12px 24px);
+    box-shadow: 0 8px 20px rgba(79,70,229,.3);
+  }
+  .cta--stripes:hover { transform: translateY(-2px); }
+  .cta--stripes:active { transform: translateY(0); }
+
+  .pie {
+    width: 3.2em; height: 3.2em; padding: 0; border-radius: 50%;
+    background: conic-gradient(
+      #6366f1 0 25%, #ec4899 25% 50%, #f59e0b 50% 75%, #22c55e 75% 100%);
+    box-shadow: inset 0 0 0 4px rgba(0,0,0,.25);
+  }
+  .pie:hover { transform: translateY(-2px); }
+  .pie:active { transform: translateY(0); }
+
+  /* Respect reduced-motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+    .btn:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <!-- The three required gradient buttons -->
+  <div class="row">
+    <button class="btn cta" type="button">Get started →</button>
+    <button class="btn glossy" type="button">Download</button>
+    <button class="btn ghost" type="button"><span>✨ Go Premium</span></button>
+  </div>
+
+  <!-- Stretch goals: hard-stop stripes + conic pie badge -->
+  <div class="row">
+    <button class="btn cta--stripes" type="button">Striped CTA</button>
+    <button class="btn pie" type="button" aria-label="Segmented badge"></button>
+    <button class="btn cta" type="button" disabled>Disabled</button>
+  </div>
+</body>
+</html>

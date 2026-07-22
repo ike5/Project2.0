@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 11 — Segmented control &amp; split button</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 2rem;
+    padding: 2rem; background: #0e1116; color: #e6edf3;
+    font-family: system-ui, sans-serif;
+  }
+  h2 { font-size: .95rem; font-weight: 600; color: #8b949e; margin: 0 0 .75rem; text-align: center; }
+  .stack { display: grid; gap: .75rem; justify-items: center; }
+
+  /* ---- one reusable base button ---- */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .6em 1.15em; border-radius: 10px;
+    background: #21262d; color: #e6edf3; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease;
+  }
+  .btn:hover { background: #2d333b; }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn svg { width: 1.1em; height: 1.1em; flex: none; }
+
+  /* ---------- Part A · SEGMENTED CONTROL ---------- */
+  .group { display: inline-flex; }
+  .group .btn {
+    border-radius: 0;                              /* kill individual rounding */
+    border: 1px solid #30363d;
+  }
+  .group .btn:first-child { border-radius: 10px 0 0 10px; }   /* round the ends only */
+  .group .btn:last-child  { border-radius: 0 10px 10px 0; }
+  .group .btn + .btn { margin-left: -1px; }        /* collapse the doubled border */
+
+  .group .btn[aria-pressed="true"] {
+    background: #4f46e5; color: #fff; border-color: #4f46e5;
+  }
+  /* active/hovered segment on top so its border wins */
+  .group .btn:hover,
+  .group .btn[aria-pressed="true"] { position: relative; z-index: 1; }
+
+  /* ---------- Part B · SPLIT BUTTON ---------- */
+  .split { display: inline-flex; }
+  .split .btn { border-radius: 0; background: #4f46e5; color: #fff; }
+  .split .btn:hover { background: #4338ca; }
+  .split .main  { border-radius: 10px 0 0 10px; flex: 1 1 auto; }
+  .split .caret {
+    border-radius: 0 10px 10px 0; padding-inline: .55em; flex: none;
+    box-shadow: inset 1px 0 0 rgba(255,255,255,.28);   /* hairline divider, no width */
+  }
+  .split .caret svg { width: 1em; height: 1em; }
+
+  /* count badge on the main action (stretch) */
+  .count {
+    flex: none; min-width: 1.5em; height: 1.5em; padding: 0 .45em;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; background: rgba(255,255,255,.22);
+    font-size: .78em; font-weight: 700;
+  }
+
+  /* full-width split on narrow screens (stretch) */
+  @media (max-width: 420px) {
+    .split { display: flex; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Part A — segmented control -->
+  <div class="stack">
+    <h2>Segmented control</h2>
+    <div class="group" role="group" aria-label="View mode">
+      <button class="btn" type="button" aria-pressed="true">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+        </svg>
+        List
+      </button>
+      <button class="btn" type="button" aria-pressed="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/>
+        </svg>
+        Board
+      </button>
+      <button class="btn" type="button" aria-pressed="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 6h10M4 12h16M4 18h7"/>
+        </svg>
+        Timeline
+      </button>
+    </div>
+  </div>
+
+  <!-- Part B — split button -->
+  <div class="stack">
+    <h2>Split button</h2>
+    <div class="split">
+      <button class="btn main" type="button">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        Add item
+        <span class="count">7</span>
+      </button>
+      <button class="btn caret" type="button" aria-label="More add options" aria-haspopup="menu">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+</body>
+</html>
+</content>

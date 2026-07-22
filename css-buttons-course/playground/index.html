@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Playground — Remix Any Button · CSS Buttons Course</title>
+<style>
+  /* =====================================================================
+     🎛️  THE PLAYGROUND — YOUR SANDBOX. EDIT FREELY, SAVE, REFRESH.
+
+     HOW TO REMIX
+     ------------
+     1. The BIG button is `.hero` (search "★ THE BIG BUTTON" below).
+        It's the empty canvas — change its colors, radius, shadow,
+        gradient, and hover to make it yours.
+
+     2. Each preset lives in its own block below, clearly labeled:
+          .p-solid   → flat, dependable
+          .p-gradient→ linear-gradient fill
+          .p-ghost   → outline only, fills on hover
+          .p-pill    → fully-rounded ends
+          .p-glow    → animated neon glow
+          .p-neu     → soft neumorphic (extruded)
+        Copy any block, rename the class, and tweak.
+
+     3. Reusable knobs live in :root as --var tokens. Change one variable
+        and everything using it updates. Swap --accent to re-theme fast.
+
+     4. Handy dials to turn on ANY button:
+          background / background-image   → the fill (try a gradient)
+          border-radius: 999px            → make it a pill
+          box-shadow                      → depth, glow, or a pressed inset
+          transform: translateY(-2px)     → a hover "lift"
+          transition-timing-function      → the FEEL (see easing-reference.md)
+
+     No JavaScript. Everything here is HTML + CSS and works from file://.
+     Accessibility is baked in: :focus-visible rings + a reduced-motion guard.
+     ===================================================================== */
+
+  /* ---- shared page shell (same look as Module 00's demo) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5; --accent-2: #a855f7;
+
+    /* easing tokens — paste from cheatsheets/easing-reference.md */
+    --ease-out-quart: cubic-bezier(.25, 1, .5, 1);
+    --ease-out-back:  cubic-bezier(.34, 1.56, .64, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 960px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; max-width: 60ch; }
+  header code { background: #0d1117; border: 1px solid var(--line);
+                border-radius: 6px; padding: .1rem .4rem; font-size: .85em; }
+  main { max-width: 960px; margin: 0 auto; }
+
+  /* the hero stage */
+  .stage {
+    background:
+      radial-gradient(120% 120% at 50% -10%, rgba(79,70,229,.18), transparent 60%),
+      var(--panel);
+    border: 1px solid var(--line); border-radius: 18px;
+    padding: clamp(2.5rem, 8vw, 5rem) 1.5rem;
+    display: grid; place-items: center; gap: 1rem; margin-bottom: 2rem;
+  }
+  .stage .hint { color: var(--muted); font-size: .85rem; margin: 0; }
+
+  /* preset grid */
+  .grid {
+    display: grid; gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem 1.25rem;
+    display: grid; place-items: center; gap: .9rem; min-height: 140px;
+  }
+  .card .tag { color: var(--muted); font-size: .8rem; letter-spacing: .03em;
+               text-transform: uppercase; margin: 0; }
+  footer { max-width: 960px; margin: 2.5rem auto 0; color: var(--muted);
+           font-size: .85rem; }
+  footer a { color: #818cf8; }
+
+  /* =====================================================================
+     BASELINE — every button inherits this reset. (from Module 00)
+     ===================================================================== */
+  .btn {
+    appearance: none; -webkit-appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .7em 1.4em; min-height: 44px; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    white-space: nowrap; cursor: pointer; touch-action: manipulation;
+    user-select: none;
+    transition: transform .16s var(--ease-out-quart),
+                background-color .16s ease, box-shadow .16s ease;
+  }
+  /* one focus ring for EVERYTHING — never remove this */
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* =====================================================================
+     ★ THE BIG BUTTON — your main canvas. Make it yours.
+     ===================================================================== */
+  .hero {
+    font-size: 1.5rem; padding: .85em 2em; border-radius: 14px;
+    background-image: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 10px 30px -8px rgba(79,70,229,.6);
+  }
+  .hero:hover  { transform: translateY(-3px) scale(1.02);
+                 box-shadow: 0 16px 40px -8px rgba(168,85,247,.65); }
+  .hero:active { transform: translateY(0) scale(.99); }
+
+  /* =====================================================================
+     PRESET 1 · SOLID — flat and dependable
+     ===================================================================== */
+  .p-solid { background: var(--accent); }
+  .p-solid:hover  { background: #4338ca; transform: translateY(-2px); }
+  .p-solid:active { transform: translateY(0); }
+
+  /* =====================================================================
+     PRESET 2 · GRADIENT — linear-gradient fill
+     ===================================================================== */
+  .p-gradient {
+    background-image: linear-gradient(135deg, #6366f1, #a855f7);
+  }
+  .p-gradient:hover  { transform: translateY(-2px);
+                       box-shadow: 0 10px 24px -8px rgba(168,85,247,.6); }
+  .p-gradient:active { transform: translateY(0); }
+
+  /* =====================================================================
+     PRESET 3 · GHOST — outline only, fills in on hover
+     ===================================================================== */
+  .p-ghost {
+    background: transparent; color: #c7d2fe;
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+  }
+  .p-ghost:hover  { background: var(--accent); color: #fff; }
+  .p-ghost:active { transform: translateY(1px); }
+
+  /* =====================================================================
+     PRESET 4 · PILL — fully rounded ends (border-radius: 999px)
+     ===================================================================== */
+  .p-pill {
+    border-radius: 999px;
+    background: linear-gradient(135deg, #ec4899, #f59e0b);
+  }
+  .p-pill:hover  { transform: translateY(-2px); filter: brightness(1.05); }
+  .p-pill:active { transform: translateY(0); }
+
+  /* =====================================================================
+     PRESET 5 · GLOW — animated neon (background-size 200% + slide)
+     ===================================================================== */
+  .p-glow {
+    background-image: linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #6366f1);
+    background-size: 200% 100%;
+    box-shadow: 0 0 18px -2px rgba(168,85,247,.7);
+    animation: glow-slide 5s linear infinite;
+  }
+  .p-glow:hover  { transform: translateY(-2px);
+                   box-shadow: 0 0 28px 0 rgba(236,72,153,.8); }
+  .p-glow:active { transform: translateY(0); }
+  @keyframes glow-slide {
+    from { background-position:   0% 50%; }
+    to   { background-position: 200% 50%; }
+  }
+
+  /* =====================================================================
+     PRESET 6 · NEUMORPHIC — soft, extruded from the card surface
+     (needs a matching background; paired light + dark shadows)
+     ===================================================================== */
+  .card.neu-surface { background: #1b2230; }
+  .p-neu {
+    background: #1b2230; color: #c7d2fe; border-radius: 14px;
+    box-shadow: -6px -6px 12px rgba(255,255,255,.05),
+                 6px  6px 14px rgba(0,0,0,.55);
+  }
+  .p-neu:hover { color: #e6edf3; }
+  .p-neu:active {
+    box-shadow: inset -4px -4px 10px rgba(255,255,255,.05),
+                inset  4px  4px 10px rgba(0,0,0,.6);
+  }
+
+  /* =====================================================================
+     ♿  MOTION GUARD — respect users who asked for less motion.
+     ===================================================================== */
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+    .btn:hover, .btn:active { transform: none; }
+    .p-glow { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🎛️ The Button Playground</h1>
+    <p>A sandbox to remix anything you build in the course. View this file's source: the
+       big <code>.hero</code> button is your canvas, and each preset below is a labeled,
+       copy-me block. Change a value, save, refresh. Tab through with your keyboard to see
+       <code>:focus-visible</code>.</p>
+  </header>
+
+  <main>
+    <!-- ★ THE BIG BUTTON -->
+    <section class="stage">
+      <button class="btn hero" type="button">Remix me ✨</button>
+      <p class="hint">This is <code style="color:#818cf8">.hero</code> — edit it in the
+         <code style="color:#818cf8">&lt;style&gt;</code> block to make it yours.</p>
+    </section>
+
+    <!-- PRESETS -->
+    <section class="grid">
+      <div class="card">
+        <button class="btn p-solid" type="button">Solid</button>
+        <p class="tag">solid</p>
+      </div>
+
+      <div class="card">
+        <button class="btn p-gradient" type="button">Gradient</button>
+        <p class="tag">gradient</p>
+      </div>
+
+      <div class="card">
+        <button class="btn p-ghost" type="button">Ghost</button>
+        <p class="tag">ghost / outline</p>
+      </div>
+
+      <div class="card">
+        <button class="btn p-pill" type="button">Pill button</button>
+        <p class="tag">pill</p>
+      </div>
+
+      <div class="card">
+        <button class="btn p-glow" type="button">Glow</button>
+        <p class="tag">animated glow</p>
+      </div>
+
+      <div class="card neu-surface">
+        <button class="btn p-neu" type="button">Neumorphic</button>
+        <p class="tag">neumorphic</p>
+      </div>
+
+      <div class="card">
+        <button class="btn p-solid" type="button" disabled>Disabled</button>
+        <p class="tag">:disabled</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Reference while you tinker:
+    <a href="../cheatsheets/property-reference.md">properties</a> ·
+    <a href="../cheatsheets/easing-reference.md">easing</a> ·
+    <a href="../cheatsheets/gradients-reference.md">gradients</a> ·
+    <a href="../GLOSSARY.md">glossary</a>.
+    Everything here is plain HTML + CSS — no build, no JS.
+  </footer>
+</body>
+</html>

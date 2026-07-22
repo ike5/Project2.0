@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 01 — Sizing & spacing system</title>
+<style>
+  /* §1 — set once, forever. Every rule below assumes it. */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0; min-height: 100vh; padding: 2rem;
+    display: grid; place-content: start center; gap: 2rem;
+    background: #0e1116; color: #e6edf3;
+    font-family: system-ui, sans-serif; line-height: 1.5;
+  }
+  h2 { font-size: .95rem; color: #8b949e; font-weight: 600; margin: 0 0 .75rem; }
+  section { width: min(420px, 100%); }
+
+  /* ---- base button ------------------------------------------------- */
+  .btn {
+    appearance: none; border: 1px solid transparent; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .65em 1.25em;            /* §2 — em padding: the real sizer */
+    border-radius: .5em;
+    min-height: 44px; min-width: 44px;/* §3 — 44px hit-target floor */
+    line-height: 1.2;                 /* §7 — tight; flex does the centering */
+    background: #4f46e5; color: #fff; font-weight: 600;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease, transform .05s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { transform: translateY(1px); background: #3730a3; }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+    .btn:active { transform: none; }
+  }
+
+  /* §4a — three sizes from ONE base rule: only font-size changes */
+  .btn--sm { font-size: .8rem; }
+  .btn--md { font-size: 1rem; }
+  .btn--lg { font-size: 1.25rem; }
+
+  /* variants used below */
+  .btn--ghost { background: transparent; border-color: #30363d; color: #e6edf3; }
+  .btn--ghost:hover { background: #21262d; }
+
+  /* §5 — full-width block CTA */
+  .btn--block { display: flex; width: 100%; }
+
+  /* §6 — spacing lives on the container, via gap (rem) */
+  .btn-group {
+    display: flex; flex-wrap: wrap; gap: .75rem; align-items: center;
+  }
+
+  /* a phone-width container for the block demo */
+  .phone {
+    padding: 1rem; border-radius: 16px;
+    background: #0d1117; border: 1px solid #30363d;
+    display: grid; gap: .6rem;
+  }
+
+  /* toolbar (stretch) */
+  .toolbar {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .5rem; border-radius: 12px;
+    background: #0d1117; border: 1px solid #30363d;
+  }
+  .toolbar .spacer { margin-left: auto; }
+  .btn--icon { padding: .5em; font-size: 1.1rem; border-radius: 10px; background: #21262d; }
+  .btn--icon:hover { background: #2d333b; }
+</style>
+</head>
+<body>
+
+  <!-- §4a — three-size scale, font-size only -->
+  <section>
+    <h2>Size scale (font-size only)</h2>
+    <div class="btn-group">
+      <button class="btn btn--sm" type="button">Small</button>
+      <button class="btn btn--md" type="button">Medium</button>
+      <button class="btn btn--lg" type="button">Large</button>
+    </div>
+  </section>
+
+  <!-- §5 — full-width block CTA inside a constrained container -->
+  <section>
+    <h2>Full-width CTA</h2>
+    <div class="phone">
+      <button class="btn btn--block" type="button">Continue&nbsp;→</button>
+      <button class="btn btn--block btn--ghost" type="button">Not now</button>
+    </div>
+  </section>
+
+  <!-- §6 — spaced, wrapping button group -->
+  <section>
+    <h2>Spaced button group (gap, wraps)</h2>
+    <div class="btn-group">
+      <button class="btn" type="button">Save</button>
+      <button class="btn btn--ghost" type="button">Preview</button>
+      <button class="btn btn--ghost" type="button">Cancel</button>
+      <button class="btn btn--ghost" type="button" disabled>Delete</button>
+    </div>
+  </section>
+
+  <!-- stretch — icon toolbar, all ≥44px, last action pushed right -->
+  <section>
+    <h2>Toolbar (icon buttons ≥ 44px)</h2>
+    <div class="toolbar">
+      <button class="btn btn--icon" type="button" aria-label="Bold"><strong>B</strong></button>
+      <button class="btn btn--icon" type="button" aria-label="Italic"><em>I</em></button>
+      <button class="btn btn--icon" type="button" aria-label="Underline"><u>U</u></button>
+      <span class="spacer"></span>
+      <button class="btn btn--icon" type="button" aria-label="Delete">🗑️</button>
+    </div>
+  </section>
+
+</body>
+</html>

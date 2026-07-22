@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 02 — Typography, Color & Contrast · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — typography, color & contrast
+     ========================================================= */
+
+  /* --- Semantic color tokens: one BASE color per role --- */
+  :root {
+    --c-primary:   #2563eb;   /* blue  — main action        */
+    --c-secondary: #475569;   /* slate — quiet alternative  */
+    --c-success:   #16a34a;   /* green — confirm / save     */
+    --c-danger:    #dc2626;   /* red   — delete / destroy   */
+    --c-warning:   #d97706;   /* amber — caution            */
+  }
+
+  /* Baseline button, carried from Modules 00–01 */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 8px;
+    color: #fff; line-height: 1.2;
+    /* typography levers */
+    font-weight: 600;
+    letter-spacing: .01em;
+    white-space: nowrap;      /* never let a label wrap */
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease;
+
+    /* every variant sets ONE --base; states derive from it */
+    --base: var(--c-primary);
+    background: var(--base);
+  }
+  /* Hover/active DERIVED from --base via color-mix — one rule, all variants */
+  .btn:hover  { background: color-mix(in srgb, var(--base) 88%, black); }
+  .btn:active { background: color-mix(in srgb, var(--base) 78%, black); }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Semantic variants: each just points --base at a different role token */
+  .btn--secondary { --base: var(--c-secondary); }
+  .btn--success   { --base: var(--c-success); }
+  .btn--danger    { --base: var(--c-danger); }
+  .btn--warning   { --base: var(--c-warning); color: #1f2937; } /* dark text — see contrast card */
+
+  /* Soft / tinted variant: translucent wash of the same hue, colored text */
+  .btn--soft {
+    background: color-mix(in srgb, var(--base) 15%, transparent);
+    color: color-mix(in srgb, var(--base) 72%, white);
+  }
+  .btn--soft:hover  { background: color-mix(in srgb, var(--base) 25%, transparent); }
+  .btn--soft:active { background: color-mix(in srgb, var(--base) 32%, transparent); }
+  .btn--soft.btn--success { --base: var(--c-success); }
+  .btn--soft.btn--danger  { --base: var(--c-danger); }
+
+  /* HSL lightness-tweak technique — same idea, hsl() instead of color-mix */
+  .btn--hsl {
+    --h: 262; --s: 83%; --l: 58%;
+    background: hsl(var(--h) var(--s) var(--l));
+  }
+  .btn--hsl:hover  { background: hsl(var(--h) var(--s) 50%); }  /* -8% L  */
+  .btn--hsl:active { background: hsl(var(--h) var(--s) 42%); }  /* -16% L */
+
+  /* Uppercase / letter-spaced label style with optical adjustments */
+  .btn--caps {
+    text-transform: uppercase;
+    letter-spacing: .09em;    /* REQUIRED for caps legibility */
+    font-weight: 700;
+    font-size: .82em;         /* caps read big; scale down to compensate */
+  }
+
+  /* Truncated long label */
+  .btn--truncate { max-width: 15ch; }
+  .btn--truncate .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;             /* CRITICAL inside a flex button */
+  }
+
+  /* Contrast comparison */
+  .btn--bad  { background: #fbbf24; color: #fff;     }  /* ~1.9:1  FAIL */
+  .btn--good { background: #fbbf24; color: #1f2937;   }  /* ~10:1   PASS */
+  .btn--bad:hover, .btn--good:hover { background: #f59e0b; }
+  .badge {
+    font-size: .72rem; font-weight: 700; padding: .15em .5em; border-radius: 999px;
+    letter-spacing: .03em;
+  }
+  .badge.fail { background: #7f1d1d; color: #fecaca; }
+  .badge.pass { background: #14532d; color: #bbf7d0; }
+  .pair { display: flex; align-items: center; gap: .6rem; }
+
+  /* Translucent fills: three equivalent recipes */
+  .swatch {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 8.5rem; padding: .65em 1em; border-radius: 8px;
+    border: 1px solid var(--line); font-weight: 600; color: var(--ink);
+    background-image:
+      linear-gradient(45deg, #ffffff22 25%, transparent 25%, transparent 75%, #ffffff22 75%),
+      linear-gradient(45deg, #ffffff22 25%, transparent 25%, transparent 75%, #ffffff22 75%);
+    background-size: 16px 16px; background-position: 0 0, 8px 8px; /* checker to show alpha */
+  }
+  .fill-1 { background-color: rgba(37, 99, 235, .18); }
+  .fill-2 { background-color: hsl(217 91% 60% / .18); }
+  .fill-3 { background-color: color-mix(in srgb, #2563eb 18%, transparent); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 02 — Typography, Color &amp; Contrast</h1>
+    <p>Labels that read well, a semantic color system in custom properties, states derived
+       from one base color, and contrast you can trust. Tab through with your keyboard to
+       see <code>:focus-visible</code>.</p>
+  </header>
+
+  <main>
+
+    <section class="card">
+      <h2>1 · Semantic variant set</h2>
+      <p class="note">Five roles, each a single class that just points <code>--base</code>
+         at a different token in <code>:root</code>. Primary / secondary / success / danger /
+         warning — intent, not hex.</p>
+      <div class="row">
+        <button class="btn" type="button">Primary</button>
+        <button class="btn btn--secondary" type="button">Secondary</button>
+        <button class="btn btn--success" type="button">✓ Save</button>
+        <button class="btn btn--danger" type="button">🗑 Delete</button>
+        <button class="btn btn--warning" type="button">⚠ Caution</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Hover / active auto-derived from one base (color-mix)</h2>
+      <p class="note">No hand-picked hover colors. <code>color-mix(in srgb, var(--base) 88%,
+         black)</code> darkens whatever the base is — so <em>every</em> variant gets correct
+         states from one rule. Hover and press these.</p>
+      <div class="row">
+        <button class="btn" type="button">Primary</button>
+        <button class="btn btn--success" type="button">Success</button>
+        <button class="btn btn--danger" type="button">Danger</button>
+        <button class="btn btn--secondary" type="button">Secondary</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Same idea in HSL — lower the lightness</h2>
+      <p class="note">Store the color as <code>H S L</code> channels and just drop
+         <code>L</code> for hover/active. Dependency-free shade math.</p>
+      <div class="row">
+        <button class="btn btn--hsl" type="button">HSL base · L 58%</button>
+        <span class="note" style="margin:0">→ hover L 50% → active L 42%</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Soft / tinted variants (mix toward transparent)</h2>
+      <p class="note">A translucent wash of the same hue with colored text — great for a
+         secondary emphasis. <code>color-mix(in srgb, var(--base) 15%, transparent)</code>.</p>
+      <div class="row">
+        <button class="btn btn--soft" type="button">Soft primary</button>
+        <button class="btn btn--soft btn--success" type="button">Soft success</button>
+        <button class="btn btn--soft btn--danger" type="button">Soft danger</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Uppercase &amp; letter-spaced label style</h2>
+      <p class="note">Caps <em>require</em> tracking or they read as a wall. Note the optical
+         fix: <code>letter-spacing: .09em</code>, <code>font-weight: 700</code>, and
+         <code>font-size: .82em</code> so the caps don't look oversized.</p>
+      <div class="row">
+        <button class="btn btn--caps" type="button">Get Started</button>
+        <button class="btn btn--success btn--caps" type="button">Save Changes</button>
+        <button class="btn btn--danger btn--caps" type="button">Delete</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Truncated long label (nowrap + ellipsis)</h2>
+      <p class="note">Capped at <code>15ch</code>. The label truncates with <code>…</code>
+         instead of wrapping or overflowing. The full text lives in a <code>title</code> so
+         nothing is lost. (Hover to see it.)</p>
+      <div class="row">
+        <button class="btn btn--truncate" type="button"
+                title="Export the entire quarterly financial report as PDF">
+          <span class="label">Export the entire quarterly financial report as PDF</span>
+        </button>
+        <button class="btn btn--secondary btn--truncate" type="button"
+                title="really-long-filename-2024-final-FINAL-v3.pdf">
+          <span class="label">really-long-filename-2024-final-FINAL-v3.pdf</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · Contrast: GOOD vs BAD</h2>
+      <p class="note">Same amber fill. White text fails hard (~1.9:1); near-black passes
+         (~10:1). Light, saturated colors want <em>dark</em> text — don't default to white.
+         WCAG minimum for normal text is <strong>4.5:1</strong>.</p>
+      <div class="row">
+        <div class="pair">
+          <button class="btn btn--bad" type="button">Confirm</button>
+          <span class="badge fail">✕ ~1.9:1 FAIL</span>
+        </div>
+        <div class="pair">
+          <button class="btn btn--good" type="button">Confirm</button>
+          <span class="badge pass">✓ ~10:1 PASS</span>
+        </div>
+      </div>
+      <p class="note" style="margin:1rem 0 0">Don't rely on color alone: pair the hue with a
+         word or icon (🗑 Delete, ✓ Save) so meaning survives color-blindness.</p>
+    </section>
+
+    <section class="card">
+      <h2>8 · Translucent fills — three equivalent recipes</h2>
+      <p class="note">Alpha makes only the <em>background</em> see-through (text stays crisp),
+         unlike <code>opacity</code> which fades everything. The checkerboard shows through
+         all three identical 18% blue tints.</p>
+      <div class="row">
+        <span class="swatch fill-1">rgba(… / .18)</span>
+        <span class="swatch fill-2">hsl(… / .18)</span>
+        <span class="swatch fill-3">color-mix →transparent</span>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    View source to read the CSS — lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>

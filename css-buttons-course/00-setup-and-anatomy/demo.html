@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 00 — Setup & Anatomy · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — the accessible baseline button
+     ========================================================= */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 8px;
+    background: #4f46e5; color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { background: #3730a3; }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* an UNstyled button, to compare against */
+  .native { font: inherit; }
+
+  /* anatomy diagram button */
+  .anatomy {
+    position: relative; font-size: 1.25rem;
+    outline: 2px dashed #f59e0b; outline-offset: 6px;
+  }
+  .label-pad { outline: 1px dashed #22d3ee; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 00 — Setup &amp; Anatomy of a Button</h1>
+    <p>Tame the browser defaults and build a correct, accessible baseline. Try tabbing to
+       the buttons with your keyboard to see <code>:focus-visible</code> in action.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Native vs. reset</h2>
+      <p class="note">Left: the browser's default <code>&lt;button&gt;</code>. Right: our
+         reset baseline. Note the default doesn't even use the page font.</p>
+      <div class="row">
+        <button class="native" type="button">Native button</button>
+        <button class="btn" type="button">Baseline .btn</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Every interactive state</h2>
+      <p class="note">Hover, press, tab-to-focus, and disabled — all handled.</p>
+      <div class="row">
+        <button class="btn" type="button">Hover / press me</button>
+        <button class="btn" type="button">Tab to me</button>
+        <button class="btn" type="button" disabled>Disabled</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Anatomy</h2>
+      <p class="note">Amber dashes = the padding box; cyan = the content (label).
+         Padding is what makes a button comfortable to click.</p>
+      <div class="row">
+        <button class="btn anatomy" type="button"><span class="label-pad">Label</span></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · em-based padding scales with text</h2>
+      <p class="note">Same one <code>.btn</code> rule — only <code>font-size</code> changes.
+         Padding, gap, and radius-feel scale proportionally.</p>
+      <div class="row">
+        <button class="btn" type="button" style="font-size:.8rem">Small</button>
+        <button class="btn" type="button" style="font-size:1rem">Medium</button>
+        <button class="btn" type="button" style="font-size:1.3rem">Large</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>

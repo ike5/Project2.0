@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 08 — Design your own motion language</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; padding: 2.5rem 1.5rem;
+    display: grid; place-content: center; gap: 2rem;
+    background: #0e1116; color: #e6edf3;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+       color: #8b949e; margin: 0 0 .9rem; font-weight: 600; }
+  .group { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  /* =========================================================
+     EASING TOKENS — I designed each of these on purpose.
+     For EVERY cubic-bezier below, P0 = (0,0) and P3 = (1,1)
+     are FIXED by CSS. The four numbers are P1(x1,y1), P2(x2,y2)
+     — the coordinates I chose.
+     ========================================================= */
+  :root {
+    /* Built-in recreated: ease-out ≡ this. I chose P1(0,0), P2(0.58,1). */
+    --ease-out:        cubic-bezier(0,    0,    0.58, 1);
+
+    /* Clean deceleration. I chose P1(0.25,1), P2(0.5,1). No Y past 1 → no overshoot. */
+    --ease-out-quart:  cubic-bezier(0.25, 1,    0.5,  1);
+
+    /* OVERSHOOT "back". I chose P1(0.34,1.56), P2(0.64,1).
+       y1 = 1.56 (> 1) is what makes it fly past the target and settle. */
+    --ease-out-back:   cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Symmetric, smooth both ways. I chose P1(0.65,0), P2(0.35,1). */
+    --ease-in-out-cubic: cubic-bezier(0.65, 0,   0.35, 1);
+
+    /* ANTICIPATION (stretch). I chose P1(0.36,-0.6), P2(0.66,-0.56).
+       y1 = -0.6 (< 0) makes it wind up backwards before launching. */
+    --ease-anticipate: cubic-bezier(0.36, -0.6, 0.66, -0.56);
+
+    /* linear() multi-bounce (stretch). Support: Chrome 113+, FF 112+, Safari 17.4+. */
+    --bounce: linear(
+      0, 0.063, 0.25, 0.563, 1 36%, 0.813, 0.75, 0.813,
+      1 72%, 0.938, 0.938, 1
+    );
+
+    /* a small motion scale */
+    --fast: .12s; --standard: .25s; --expressive: .45s;
+  }
+
+  /* Base button, reused */
+  .btn {
+    appearance: none; border: 1px solid transparent; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .7em 1.3em; border-radius: 12px; font-weight: 600; line-height: 1.2;
+    color: #fff; background: #4f46e5; cursor: pointer;
+    touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Each variant animates transform on hover with a different token */
+  .b-quart { transition: transform var(--standard) var(--ease-out-quart); }
+  .b-quart:hover { transform: translateY(-6px); }
+
+  .b-back  { background: #db2777; transition: transform var(--expressive) var(--ease-out-back); }
+  .b-back:hover  { transform: scale(1.14); }
+
+  .b-cubic { background: #0891b2; transition: transform var(--standard) var(--ease-in-out-cubic); }
+  .b-cubic:hover { transform: translateY(-6px) scale(1.05); }
+
+  .b-anticipate { background: #7c3aed; transition: transform var(--expressive) var(--ease-anticipate); }
+  .b-anticipate:hover { transform: translateY(-14px); }
+
+  .b-out   { background: #16a34a; transition: transform var(--standard) var(--ease-out); }
+  .b-out:hover { transform: scale(1.1); }
+
+  /* steps() — a stepped progress fill that ticks in 8 jumps on hover */
+  .stepbtn { position: relative; overflow: hidden; background: #1f2937; }
+  .stepbtn .fill {
+    position: absolute; inset: 0; width: 0; z-index: 0;
+    background: linear-gradient(90deg,#22c55e,#16a34a);
+    transition: width .9s steps(8, jump-end);
+  }
+  .stepbtn:hover .fill, .stepbtn:focus-within .fill { width: 100%; }
+  .stepbtn span { position: relative; z-index: 1; }
+
+  /* linear() bounce — with a cubic-bezier fallback declared first */
+  .bouncebtn { transition: transform .9s cubic-bezier(.34,1.56,.64,1); }
+  .bouncebtn { transition: transform .9s var(--bounce); }
+  .bouncebtn:hover { transform: translateY(10px); }
+
+  /* Motion scale demo — same curve, three durations, three sizes */
+  .scale-fast { font-size: .85rem; transition: transform var(--fast) var(--ease-out-back); }
+  .scale-std  { font-size: 1rem;   transition: transform var(--standard) var(--ease-out-back); }
+  .scale-exp  { font-size: 1.25rem; transition: transform var(--expressive) var(--ease-out-back); }
+  .scale-fast:hover, .scale-std:hover, .scale-exp:hover { transform: scale(1.12); }
+
+  /* Guard ALL motion: keep the end state, drop the journey */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Deceleration vs. overshoot</h2>
+    <div class="group">
+      <button class="btn b-out"   type="button">ease-out (built-in, written out)</button>
+      <button class="btn b-quart" type="button">Out Quart — clean stop</button>
+      <button class="btn b-back"  type="button">Out Back — pops past ✨</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <h2>Smooth &amp; wind-up</h2>
+    <div class="group">
+      <button class="btn b-cubic"      type="button">InOut Cubic</button>
+      <button class="btn b-anticipate" type="button">Anticipate — winds up ⏮</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <h2>Stepped motion &amp; multi-bounce</h2>
+    <div class="group">
+      <button class="btn stepbtn" type="button"><span>steps(8) fill</span><span class="fill"></span></button>
+      <button class="btn bouncebtn" type="button">linear() bounce 🏀</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <h2>Motion scale — same curve, three durations</h2>
+    <div class="group">
+      <button class="btn scale-fast" type="button">Fast 120ms</button>
+      <button class="btn scale-std"  type="button">Standard 250ms</button>
+      <button class="btn scale-exp"  type="button">Expressive 450ms</button>
+    </div>
+  </div>
+</body>
+</html>

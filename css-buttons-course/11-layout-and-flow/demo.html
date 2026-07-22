@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 11 — Layout & Flow · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — Layout & Flow
+     ========================================================= */
+
+  /* --- the baseline .btn, carried from Module 00 --- */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { background: #3730a3; }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* a neutral/secondary look, reused throughout */
+  .btn--ghost {
+    background: #21262d; color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn--ghost:hover  { background: #2d333b; }
+  .btn--ghost:active { background: #1c2128; }
+
+  /* 1 · ICON + LABEL — tie the icon size to the text, never let it shrink */
+  .btn svg { width: 1.1em; height: 1.1em; flex: none; }
+
+  /* 2 · ICON-ONLY — equal width/height, padding:0, aria-label required */
+  .btn--icon {
+    padding: 0; width: 2.6em; height: 2.6em; border-radius: 12px;
+  }
+  .btn--icon.round { border-radius: 50%; }
+  .btn--icon svg { width: 1.3em; height: 1.3em; }
+
+  /* 3 · TRUNCATION — the min-width:0 trick inside flex */
+  .btn .label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;                 /* the one everyone forgets */
+  }
+
+  /* 4 · SEGMENTED CONTROL / GROUP — shared edges */
+  .group { display: inline-flex; }
+  .group .btn {
+    border-radius: 0;
+    background: #21262d; color: var(--ink);
+    border: 1px solid var(--line); font-weight: 600;
+  }
+  .group .btn:first-child { border-radius: 10px 0 0 10px; }
+  .group .btn:last-child  { border-radius: 0 10px 10px 0; }
+  .group .btn + .btn { margin-left: -1px; }        /* collapse the shared border */
+  .group .btn:hover { background: #2d333b; }
+  .group .btn[aria-pressed="true"] {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  /* active/hovered segment sits on top so its border wins */
+  .group .btn:hover,
+  .group .btn[aria-pressed="true"] { position: relative; z-index: 1; }
+
+  /* 5 · SPLIT BUTTON — action + caret segment */
+  .split { display: inline-flex; }
+  .split .btn { border-radius: 0; }
+  .split .main  { border-radius: 10px 0 0 10px; }
+  .split .caret {
+    border-radius: 0 10px 10px 0; padding-inline: .6em;
+    box-shadow: inset 1px 0 0 rgba(255,255,255,.25);   /* hairline divider */
+  }
+  .split .caret svg { width: 1em; height: 1em; }
+
+  /* 6 · TOOLBAR — wrap-friendly flex row */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+    padding: .5rem; border-radius: 12px;
+    background: #0d1117; border: 1px solid var(--line);
+  }
+  .toolbar .divider {
+    width: 1px; align-self: stretch; background: var(--line); margin: 0 .1rem;
+  }
+  .toolbar .spacer { margin-left: auto; }            /* push to the far end */
+
+  /* 7 · FULL-WIDTH & RESPONSIVE */
+  .btn--block   { display: flex; width: 100%; }
+  .btn--between { justify-content: space-between; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: .75rem; }
+  .btn-row .btn { flex: 1 1 auto; }                  /* share the row, wrap when tight */
+
+  /* 8 · BADGES & COUNTERS */
+  .count {                                           /* inline pill, a flex child */
+    flex: none; min-width: 1.6em; height: 1.6em; padding: 0 .5em;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; background: rgba(255,255,255,.22);
+    font-size: .8em; font-weight: 700;
+  }
+  .btn.has-badge { position: relative; }             /* anchor for the floating badge */
+  .badge {
+    position: absolute; top: -.4em; right: -.4em;
+    min-width: 1.4em; height: 1.4em; padding: 0 .35em;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; background: #ef4444; color: #fff;
+    font-size: .72em; font-weight: 700; line-height: 1;
+    border: 2px solid var(--panel);                  /* cut-out ring */
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 11 — Layout &amp; Flow</h1>
+    <p>A button is a flex container — inside (icon + label) and out (groups, split buttons,
+       toolbars). Try tabbing through, and <strong>resize the window</strong> to watch the
+       toolbar and button rows wrap.</p>
+  </header>
+
+  <main>
+
+    <!-- 1 · ICON + LABEL -->
+    <section class="card">
+      <h2>1 · Icon + label — leading &amp; trailing</h2>
+      <p class="note"><code>display: inline-flex</code> + <code>gap</code> spaces the icon
+         from the text. Leading vs. trailing is just source order. Every icon is
+         <code>aria-hidden</code>; the label carries the meaning.</p>
+      <div class="row">
+        <button class="btn" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+          </svg>
+          Download
+        </button>
+        <button class="btn" type="button">
+          Continue
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+          </svg>
+        </button>
+        <button class="btn btn--ghost" type="button">
+          <span aria-hidden="true">✨</span> Emoji works too
+        </button>
+      </div>
+    </section>
+
+    <!-- 2 · ICON-ONLY -->
+    <section class="card">
+      <h2>2 · Icon-only buttons — square &amp; circle</h2>
+      <p class="note">No text, so each one <strong>must</strong> carry an
+         <code>aria-label</code>. Equal <code>width</code>/<code>height</code> +
+         <code>padding: 0</code> make the box; <code>border-radius: 50%</code> makes it round.
+         The inherited centering drops the icon dead-center.</p>
+      <div class="row">
+        <button class="btn btn--icon round" type="button" aria-label="Add to favorites">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 21s-7-4.35-9.5-8.5C.5 9 2 5 5.5 5 7.7 5 9 6.5 12 9c3-2.5 4.3-4 6.5-4C22 5 23.5 9 21.5 12.5 19 16.65 12 21 12 21z"/>
+          </svg>
+        </button>
+        <button class="btn btn--icon round btn--ghost" type="button" aria-label="Share">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>
+          </svg>
+        </button>
+        <button class="btn btn--icon" type="button" aria-label="Settings">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Close">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 3 · TRUNCATION -->
+    <section class="card">
+      <h2>3 · Label truncation inside flex</h2>
+      <p class="note">The icon and count stay fixed (<code>flex: none</code>); only the
+         <code>.label</code> clips with <code>…</code>. It works <em>only</em> because the
+         label has <code>min-width: 0</code> — remove it and the text bulldozes the button.</p>
+      <div class="row">
+        <button class="btn" style="max-width: 240px" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/>
+          </svg>
+          <span class="label">Quarterly financial results — final revision (do not send)</span>
+          <span class="count">3</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 4 · SEGMENTED CONTROL -->
+    <section class="card">
+      <h2>4 · Segmented control / button group</h2>
+      <p class="note">A flex row with no gap: buttons share edges. Only the outer corners are
+         rounded (<code>:first-child</code>/<code>:last-child</code>), and
+         <code>margin-left: -1px</code> collapses the doubled border into one seam. Click to
+         toggle <code>aria-pressed</code>.</p>
+      <div class="row">
+        <div class="group" role="group" aria-label="Text alignment">
+          <button class="btn" type="button" aria-pressed="true">Day</button>
+          <button class="btn" type="button" aria-pressed="false">Week</button>
+          <button class="btn" type="button" aria-pressed="false">Month</button>
+        </div>
+
+        <div class="group" role="group" aria-label="View mode">
+          <button class="btn btn--icon" type="button" aria-pressed="true" aria-label="List view">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+            </svg>
+          </button>
+          <button class="btn btn--icon" type="button" aria-pressed="false" aria-label="Grid view">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 · SPLIT BUTTON -->
+    <section class="card">
+      <h2>5 · Split button</h2>
+      <p class="note">A wide primary action plus a narrow caret segment that opens more
+         options. The caret is an icon-only button — real <code>aria-label</code> +
+         <code>aria-haspopup</code>. The divider is an <code>inset box-shadow</code>, so it
+         adds no width.</p>
+      <div class="row">
+        <div class="split">
+          <button class="btn main" type="button">Save</button>
+          <button class="btn caret" type="button" aria-label="More save options"
+                  aria-haspopup="menu">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="split">
+          <button class="btn main btn--ghost" type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+            </svg>
+            Export
+          </button>
+          <button class="btn caret btn--ghost" type="button" aria-label="Choose export format"
+                  aria-haspopup="menu">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · TOOLBAR -->
+    <section class="card">
+      <h2>6 · Toolbar — wrap-friendly</h2>
+      <p class="note">A flex row with <code>gap</code> and <code>flex-wrap: wrap</code>: it
+         never overflows, it wraps. <code>margin-left: auto</code> on the last button pushes
+         it to the far end. Narrow your window to see it stack.</p>
+      <div class="toolbar" role="toolbar" aria-label="Formatting">
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Bold">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 4h8a4 4 0 0 1 0 8H6zM6 12h9a4 4 0 0 1 0 8H6z"/>
+          </svg>
+        </button>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Italic">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 4h-9M14 20H5M15 4 9 20"/>
+          </svg>
+        </button>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Underline">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 4v6a6 6 0 0 0 12 0V4M4 21h16"/>
+          </svg>
+        </button>
+        <span class="divider" aria-hidden="true"></span>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Align left">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 10H3M21 6H3M21 14H3M17 18H3"/>
+          </svg>
+        </button>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Align center">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 10H6M21 6H3M21 14H3M18 18H6"/>
+          </svg>
+        </button>
+        <span class="divider" aria-hidden="true"></span>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Insert link">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/>
+            <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>
+          </svg>
+        </button>
+        <button class="btn spacer" type="button">Publish</button>
+      </div>
+    </section>
+
+    <!-- 7 · FULL-WIDTH & RESPONSIVE -->
+    <section class="card">
+      <h2>7 · Full-width &amp; responsive</h2>
+      <p class="note"><code>width: 100%</code> + <code>display: flex</code> gives a block CTA;
+         <code>justify-content: space-between</code> shoves the label left and the chevron to
+         the right edge. Below, <code>flex: 1 1 auto</code> lets a button row share space and
+         wrap with no media query.</p>
+      <div style="display:grid; gap:1rem; max-width:420px;">
+        <button class="btn btn--block btn--between" type="button">
+          <span>Continue to payment</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+          </svg>
+        </button>
+        <button class="btn btn--block" type="button">Centered full-width CTA</button>
+        <div class="btn-row">
+          <button class="btn btn--ghost" type="button">Cancel</button>
+          <button class="btn btn--ghost" type="button">Save draft</button>
+          <button class="btn" type="button">Publish</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 · BADGES & COUNTERS -->
+    <section class="card">
+      <h2>8 · Badges &amp; counters</h2>
+      <p class="note">Two techniques. Inline pill: a normal flex child after the label.
+         Floating badge: <code>position: absolute</code> pinned to a corner, anchored by
+         <code>position: relative</code> on the button. The number gets an
+         <code>aria-label</code> so it reads as meaningful.</p>
+      <div class="row">
+        <button class="btn" type="button">
+          Inbox <span class="count">24</span>
+        </button>
+
+        <button class="btn btn--ghost has-badge" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+          </svg>
+          Notifications
+          <span class="badge" aria-label="12 unread">12</span>
+        </button>
+
+        <button class="btn btn--icon round btn--ghost has-badge" type="button" aria-label="Cart">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+            <path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>
+          </svg>
+          <span class="badge" aria-label="3 items in cart">3</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>
+</content>

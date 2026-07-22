@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 13 — Glass + physical push button</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 2rem;
+    padding: 2rem; background: #0e1116; font-family: system-ui, sans-serif; color: #e6edf3;
+  }
+  h2 { font-size: .95rem; font-weight: 600; color: #8b949e; margin: 0 0 .9rem; text-align: center; }
+  .row { display: flex; gap: 1.25rem; align-items: center; justify-content: center; flex-wrap: wrap; }
+
+  /* shared reset */
+  .btn {
+    appearance: none; border: none; font: inherit; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    font-weight: 600; line-height: 1.2; cursor: pointer;
+    touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+  /* ---- the vivid backdrop that glass & blend need behind them ---- */
+  .vivid {
+    background:
+      radial-gradient(circle at 18% 22%, #f43f5e 0, transparent 45%),
+      radial-gradient(circle at 82% 28%, #f59e0b 0, transparent 45%),
+      radial-gradient(circle at 35% 88%, #22d3ee 0, transparent 45%),
+      radial-gradient(circle at 78% 82%, #a855f7 0, transparent 45%),
+      linear-gradient(135deg, #312e81, #0e7490);
+    border-radius: 16px; padding: 2rem;
+  }
+
+  /* ---- 1 · GLASS: fallback first, upgrade where supported ---- */
+  .glass {
+    background: rgba(20, 20, 35, 0.5);                 /* legible fallback */
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 14px; padding: .85em 1.6em; font-size: 1.05rem;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 8px 24px rgba(0,0,0,.3);
+    transition: background-color .2s ease, box-shadow .2s ease;
+  }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: rgba(255,255,255,.12);
+      -webkit-backdrop-filter: blur(12px) saturate(160%);
+              backdrop-filter: blur(12px) saturate(160%);
+    }
+  }
+  .glass:hover {
+    background: rgba(255,255,255,.2);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 10px 30px rgba(0,0,0,.4);
+  }
+
+  /* ---- 2 · PHYSICAL PUSH BUTTON ---- */
+  .push {
+    background: #6366f1; border-radius: 12px; padding: .9em 1.8em; font-size: 1.05rem;
+    box-shadow: 0 6px 0 #3730a3, 0 8px 16px rgba(0,0,0,.35);   /* edge + ground shadow */
+    transform: translateY(0);
+    transition: transform .06s ease, box-shadow .06s ease;
+  }
+  .push:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 0 #3730a3, 0 12px 20px rgba(0,0,0,.4);
+  }
+  .push:active {                                              /* face drops onto the edge */
+    transform: translateY(6px);
+    box-shadow: 0 1px 0 #3730a3, 0 2px 6px rgba(0,0,0,.4);
+  }
+  /* re-skin with only a modifier class */
+  .push--arcade { background: #f43f5e; box-shadow: 0 6px 0 #9f1239, 0 8px 16px rgba(0,0,0,.35); }
+  .push--arcade:hover  { box-shadow: 0 8px 0 #9f1239, 0 12px 20px rgba(0,0,0,.4); }
+  .push--arcade:active { box-shadow: 0 1px 0 #9f1239, 0 2px 6px rgba(0,0,0,.4); }
+
+  /* ---- STRETCH · 3D tilt on hover ---- */
+  .stage { perspective: 600px; display: inline-block; }
+  .tilt {
+    position: relative;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    border-radius: 16px; padding: 1.1em 1.8em; font-size: 1.05rem;
+    transform-style: preserve-3d;
+    box-shadow: 0 10px 25px rgba(80,40,160,.45);
+    transition: transform .25s ease, box-shadow .25s ease;
+    will-change: transform;
+  }
+  .tilt .label { display: inline-block; transform: translateZ(30px); }
+  .stage:hover .tilt {
+    transform: rotateX(12deg) rotateY(-14deg);
+    box-shadow: 24px 24px 40px rgba(0,0,0,.5);
+  }
+
+  /* ---- STRETCH · mix-blend-mode label, contained by isolation ---- */
+  .blend-wrap { isolation: isolate; }
+  .blend { background: rgba(255,255,255,.9); border-radius: 12px; padding: .85em 1.6em; font-size: 1.05rem; }
+  .blend .blend-label { mix-blend-mode: difference; color: #fff; }
+
+  /* ---- reduced motion ---- */
+  @media (prefers-reduced-motion: reduce) {
+    .glass, .push, .tilt { transition: none; }
+    .stage:hover .tilt { transform: none; }
+    .push:hover  { transform: none; }
+    .push:active { transform: translateY(3px); }   /* keep a small press cue */
+  }
+</style>
+</head>
+<body>
+  <!-- 1 · Glass over a vivid backdrop -->
+  <div>
+    <h2>Glassmorphism — over a gradient</h2>
+    <div class="vivid">
+      <div class="row">
+        <button class="btn glass" type="button">🧊 Frosted glass</button>
+        <button class="btn glass" type="button">Get the pass →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 · Physical push button -->
+  <div>
+    <h2>Physical push button — press &amp; hold</h2>
+    <div class="row">
+      <button class="btn push" type="button">Press me</button>
+      <button class="btn push push--arcade" type="button">⬤ Insert coin</button>
+    </div>
+  </div>
+
+  <!-- Stretch: 3D tilt + blend-mode label -->
+  <div>
+    <h2>Stretch — 3D tilt &amp; blend label</h2>
+    <div class="vivid blend-wrap">
+      <div class="row">
+        <span class="stage">
+          <button class="btn tilt" type="button"><span class="label">Tilt me</span></button>
+        </span>
+        <button class="btn blend" type="button"><span class="blend-label">DIFFERENCE</span></button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

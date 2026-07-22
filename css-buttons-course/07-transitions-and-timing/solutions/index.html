@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 07 — Transitions & Timing</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 2rem;
+    background: #0e1116; font-family: system-ui, sans-serif; color: #e6edf3;
+  }
+  .row { display: flex; gap: 1.25rem; align-items: center; justify-content: center;
+         flex-wrap: wrap; }
+  .caption { text-align: center; color: #8b949e; font-size: .85rem; margin: 0; }
+
+  /* Base button — Module 00 reset -------------------------------------- */
+  .btn {
+    appearance: none; border: 2px solid transparent; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .7em 1.4em; border-radius: 12px;
+    color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+  .btn:active { transform: translateY(-1px) scale(.99); }
+
+  /* ---- The answer: transform + background, DIFFERENT durations,
+          ASYMMETRIC in vs. out --------------------------------------- */
+  .move {
+    background: #4f46e5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+
+    /* OUT (leaving hover) — slower, ease-in: accelerates away & settles.
+       Note the two properties have DIFFERENT durations. */
+    transition:
+      background-color 300ms ease-in,
+      transform        320ms ease-in,
+      box-shadow       320ms ease-in;
+  }
+  .move:hover {
+    /* IN (entering hover) — quicker, ease-out: snaps up crisply.
+       Background is the snappy one (140ms); the move is slower (280ms). */
+    transition:
+      background-color 140ms ease-out,
+      transform        280ms ease-out,
+      box-shadow       280ms ease-out;
+
+    background: #7c3aed;
+    transform: translateY(-5px) scale(1.03);
+    box-shadow: 0 18px 32px rgba(124, 58, 237, .5);
+  }
+
+  /* Stagger stretch goal: icon leads, label follows a beat later. */
+  .move .icon,
+  .move .label { display: inline-block; transition: transform 260ms ease-out; }
+  .move:hover .icon  { transform: translateX(4px); transition-delay: 0ms; }
+  .move:hover .label { transform: translateX(4px); transition-delay: 80ms; }
+
+  /* Secondary variant: reuses .move but flips which property is fast —
+     here the MOVE is the snappy one and the color is slower, giving it a
+     different personality from the same structure. */
+  .move--flip { background: #0ea5e9; }
+  .move--flip:hover {
+    transition:
+      background-color 300ms ease-out,
+      transform        130ms ease-out,
+      box-shadow       130ms ease-out;
+    background: #22d3ee;
+    box-shadow: 0 18px 32px rgba(34, 211, 238, .45);
+  }
+
+  /* ---- Accessibility: reduce/remove motion when the OS asks --------- */
+  @media (prefers-reduced-motion: reduce) {
+    .btn:active,
+    .move, .move:hover,
+    .move .icon, .move .label,
+    .move:hover .icon, .move:hover .label,
+    .move--flip:hover {
+      transition: none !important;
+      transform: none !important;
+    }
+    /* colour change is not motion — keep it so hover stays legible */
+    .move:hover       { background: #7c3aed; }
+    .move--flip:hover { background: #22d3ee; }
+  }
+</style>
+</head>
+<body>
+  <div class="row">
+    <button class="btn move" type="button">
+      <span class="label">Get started</span>
+      <span class="icon" aria-hidden="true">→</span>
+    </button>
+
+    <button class="btn move move--flip" type="button">
+      <span class="label">Explore</span>
+      <span class="icon" aria-hidden="true">✦</span>
+    </button>
+  </div>
+
+  <p class="caption">
+    Hover on, then off (slowly): it snaps up crisply and settles back gently — background and
+    move finish at different times. The right button flips which property is fast.
+  </p>
+</body>
+</html>

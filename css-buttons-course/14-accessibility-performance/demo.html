@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 14 — Accessibility, Performance & Best Practices · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — accessibility & performance
+     ========================================================= */
+
+  /* Shared baseline button (from Module 00), reused by every demo below */
+  .btn {
+    appearance: none; border: 2px solid transparent; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    /* Compositor-friendly motion: transform + opacity only */
+    transition: transform .2s ease, background-color .2s ease;
+  }
+  .btn:active { background: #3730a3; }
+  /* Focus ring that survives on any background: white outline + dark halo */
+  .btn:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px #000;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* --- Card 1: reduced-motion demo ---------------------------------- */
+  /* A button that lifts + a badge that pulses forever. Both calm down
+     when the OS "reduce motion" setting is on (see the guard at the end). */
+  .rm-lift:hover  { transform: translateY(-4px) scale(1.03); }
+  .rm-lift:active { transform: translateY(-1px) scale(1.0); }
+
+  .pulse-badge {
+    display: inline-flex; align-items: center; gap: .5em;
+    padding: .5em 1em; border-radius: 999px;
+    background: #16a34a; color: #fff; font-weight: 600;
+  }
+  .pulse-badge .dot {
+    width: .6em; height: .6em; border-radius: 50%; background: #fff;
+    animation: pulse 1.4s ease-in-out infinite;   /* transform + opacity only */
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1);   opacity: 1;  }
+    50%      { transform: scale(1.9); opacity: .4; }
+  }
+
+  /* --- Card 2: cheap vs. expensive property illustration ------------ */
+  /* Both grow ~20% on hover. LEFT does it the cheap way (transform: scale)
+     — the compositor handles it, no layout. RIGHT animates width/height
+     — every frame re-runs LAYOUT (reflow) for the whole card. */
+  .perf-cheap  { transition: transform .35s ease; }
+  .perf-cheap:hover { transform: scale(1.2); }
+
+  .perf-costly {
+    width: 150px; height: 46px;
+    transition: width .35s ease, height .35s ease;  /* ❌ animates geometry */
+  }
+  .perf-costly:hover { width: 180px; height: 55px; }
+
+  .tag {
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    padding: .15em .55em; border-radius: 6px; text-transform: uppercase;
+  }
+  .tag.good { background: rgba(34,197,94,.18);  color: #4ade80; }
+  .tag.bad  { background: rgba(248,113,113,.18); color: #f87171; }
+  .stack { display: flex; flex-direction: column; gap: .5rem; align-items: flex-start; }
+
+  /* Bonus: the box-shadow → opacity refactor from Section 2 */
+  .glow-good { position: relative; }
+  .glow-good::after {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    border-radius: inherit;
+    box-shadow: 0 8px 30px rgba(99,102,241,.75);   /* painted ONCE */
+    opacity: 0; transition: opacity .3s ease;        /* fade a ready layer */
+  }
+  .glow-good:hover::after { opacity: 1; }
+  .glow-good > * { position: relative; z-index: 1; }
+
+  /* --- Card 3: forced-colors-safe button ---------------------------- */
+  /* In normal mode this looks custom. Under Windows High Contrast Mode,
+     the @media (forced-colors: active) block keeps it visible. */
+  .fc-btn { border: 2px solid transparent; }   /* a border slot to fill in HC mode */
+
+  /* --- Card 4: 44px hit-target demo --------------------------------- */
+  .icon-btn {
+    position: relative;
+    width: 30px; height: 30px; padding: 0;
+    border-radius: 8px; font-size: 1rem;
+    background: #1f2937; color: var(--ink); border: 1px solid var(--line);
+  }
+  .icon-btn::before {           /* invisible 44×44 tap target, centered */
+    content: ""; position: absolute;
+    top: 50%; left: 50%; width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  .target-outline::after {      /* visualize the hidden target for the demo */
+    content: ""; position: absolute;
+    top: 50%; left: 50%; width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+    border: 1px dashed #f59e0b; border-radius: 10px; pointer-events: none;
+  }
+  .min-btn { min-width: 44px; min-height: 44px; }
+
+  /* Hover only where hovering is real, so it never "sticks" after a tap */
+  @media (hover: hover) {
+    .btn:hover:not(:disabled) { background: #4338ca; }
+    .rm-lift:hover  { transform: translateY(-4px) scale(1.03); }
+  }
+
+  /* --- Forced-colors safety net ------------------------------------- */
+  @media (forced-colors: active) {
+    .btn, .fc-btn {
+      border: 2px solid ButtonText;   /* a guaranteed visible edge */
+      background-color: ButtonFace;
+      color: ButtonText;
+    }
+    .btn:focus-visible {
+      outline: 2px solid Highlight; outline-offset: 2px; box-shadow: none;
+    }
+    .pulse-badge { border: 1px solid ButtonText; }
+  }
+
+  /* --- THE global reduced-motion guard (put once, near the end) ------ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;   /* stop infinite loops */
+      transition-duration: .01ms !important;
+      scroll-behavior: auto !important;
+    }
+    /* Targeted softening: keep color feedback, drop the movement */
+    .rm-lift:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 14 — Accessibility, Performance &amp; Best Practices</h1>
+    <p>Make expressive buttons <em>correct</em>. Toggle your OS "reduce motion" setting and
+       reload. Tab through with the keyboard to see the <code>:focus-visible</code> ring.
+       On Windows, try High Contrast Mode.</p>
+  </header>
+
+  <main>
+    <!-- 1 · reduced-motion ------------------------------------------------ -->
+    <section class="card">
+      <h2>1 · Reduced motion — it calms under the OS setting</h2>
+      <p class="note">The button lifts on hover and the badge's dot pulses forever. Turn on
+         <em>Reduce motion</em> (macOS: System Settings → Accessibility → Display; Windows:
+         Settings → Accessibility → Visual effects → Animation) and reload — the lift is
+         removed and the pulse stops. The color feedback stays.</p>
+      <div class="row">
+        <button class="btn rm-lift" type="button">Hover: I lift ↑</button>
+        <span class="pulse-badge"><span class="dot"></span> Live</span>
+      </div>
+    </section>
+
+    <!-- 2 · cheap vs expensive -------------------------------------------- -->
+    <section class="card">
+      <h2>2 · Cheap vs. expensive — what you animate matters</h2>
+      <p class="note">Both buttons grow ~20% on hover and look nearly identical. The left one
+         uses <code>transform: scale()</code> — the GPU compositor handles it, no layout, no
+         paint. The right one animates <code>width</code>/<code>height</code>, forcing the
+         browser to re-run <strong>Layout (reflow)</strong> every frame. Open DevTools →
+         Performance and record a hover on each: the right one shows purple "Layout" bars.</p>
+      <div class="row" style="gap:2rem">
+        <div class="stack">
+          <span class="tag good">transform · composite</span>
+          <button class="btn perf-cheap" type="button">Scale me</button>
+        </div>
+        <div class="stack">
+          <span class="tag bad">width/height · reflow</span>
+          <button class="btn perf-costly" type="button">Grow me</button>
+        </div>
+      </div>
+      <p class="note" style="margin:1.1rem 0 .6rem">Same idea for glows: don't animate
+         <code>box-shadow</code> in a loop. Pre-paint it on <code>::after</code> and fade the
+         layer's <code>opacity</code> — identical look, compositor-cheap:</p>
+      <div class="row">
+        <button class="btn glow-good" type="button">Hover: opacity-faded glow ✨</button>
+      </div>
+    </section>
+
+    <!-- 3 · forced-colors-safe -------------------------------------------- -->
+    <section class="card">
+      <h2>3 · Forced-colors safe (Windows High Contrast)</h2>
+      <p class="note">Under High Contrast Mode the browser discards custom backgrounds and
+         shadows. A button whose shape was made of <code>background</code> alone can vanish.
+         This one keeps a <strong>border</strong> and, in forced-colors mode, swaps to system
+         colors (<code>ButtonText</code>, <code>ButtonFace</code>, <code>Highlight</code>) so
+         it stays visible and its focus ring stays obvious.</p>
+      <div class="row">
+        <button class="btn fc-btn" type="button">✅ Confirm</button>
+        <button class="btn fc-btn" type="button" style="background:#dc2626">⚠️ Delete</button>
+        <button class="btn fc-btn" type="button" disabled>Disabled</button>
+      </div>
+    </section>
+
+    <!-- 4 · 44px hit target ----------------------------------------------- -->
+    <section class="card">
+      <h2>4 · 44×44 hit targets & touch</h2>
+      <p class="note">The gear icon <em>looks</em> 30px, but the amber dashed box shows its
+         real <strong>44×44</strong> tap area, projected with a pseudo-element — easy to hit
+         with a thumb. The text button uses <code>min-height/min-width: 44px</code>. All
+         carry <code>touch-action: manipulation</code> to kill the 300ms tap delay.</p>
+      <div class="row" style="gap:1.5rem">
+        <button class="icon-btn target-outline" type="button" aria-label="Settings">⚙️</button>
+        <button class="btn min-btn" type="button" style="padding:.4em .8em">OK</button>
+        <button class="btn min-btn" type="button">Comfortable target</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. The reduced-motion guard is the last rule in that
+    block. Edit, save, refresh.
+  </footer>
+</body>
+</html>

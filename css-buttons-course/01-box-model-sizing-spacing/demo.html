@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 01 — Box Model, Sizing & Spacing · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — box model, sizing & spacing
+     ========================================================= */
+
+  /* Baseline button from Module 00, now with a real hit-target floor
+     and em-based padding so it scales from one property (§2, §3). */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: .5em;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    min-height: 44px; min-width: 44px;              /* WCAG-friendly floor (§3) */
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease, transform .05s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { transform: translateY(1px); background: #3730a3; }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+    .btn:active { transform: none; }
+  }
+
+  /* --- §4a: size scale by font-size (one base rule, em padding) --- */
+  .btn--sm { font-size: .8rem; }
+  .btn--md { font-size: 1rem; }
+  .btn--lg { font-size: 1.25rem; }
+
+  /* --- §4b: size scale by padding TOKENS (font-size held steady) --- */
+  .btn--tok {
+    padding: var(--btn-pad-y) var(--btn-pad-x);
+    --btn-pad-y: .65em; --btn-pad-x: 1.25em;
+  }
+  .btn--tok.btn--sm { --btn-pad-y: .4em;  --btn-pad-x: .9em;  font-size: .95rem; }
+  .btn--tok.btn--md { --btn-pad-y: .65em; --btn-pad-x: 1.25em; font-size: .95rem; }
+  .btn--tok.btn--lg { --btn-pad-y: 1em;   --btn-pad-x: 1.75em; font-size: .95rem; }
+
+  /* --- §5: full-width block CTA --- */
+  .btn--block { display: flex; width: 100%; }
+
+  /* --- §6: spacing containers --- */
+  .btn-row {
+    display: flex; flex-wrap: wrap; gap: .75rem; align-items: center;
+  }
+  .toolbar {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .5rem; border-radius: 12px;
+    background: #0d1117; border: 1px solid var(--line);
+  }
+  .toolbar .spacer { margin-left: auto; }
+  /* compact icon buttons for the toolbar — min 44px keeps them tappable */
+  .btn--icon {
+    padding: .5em; font-size: 1.1rem; border-radius: 10px;
+    background: #21262d;
+  }
+  .btn--icon:hover  { background: #2d333b; }
+  .btn--icon:active { background: #30363d; }
+
+  /* --- §3: hit-target visualization --- */
+  .hit-demo { align-items: flex-end; gap: 2rem; }
+  .hit-wrap { position: relative; display: inline-block; }
+  /* a translucent 44×44 patch centered behind the button = a fingertip */
+  .hit-wrap::before {
+    content: ""; position: absolute; top: 50%; left: 50%;
+    width: 44px; height: 44px; transform: translate(-50%, -50%);
+    background: rgba(244, 63, 94, .35);
+    outline: 1px dashed #fb7185; border-radius: 6px;
+    pointer-events: none;
+  }
+  .hit-label { color: var(--muted); font-size: .8rem; text-align: center; margin-top: .5rem; }
+  /* an intentionally TOO-SMALL button that ignores the floor, to compare */
+  .btn--tiny {
+    min-height: 0; min-width: 0;
+    padding: 2px 6px; font-size: .7rem; border-radius: 4px;
+  }
+
+  /* --- container that mimics a phone screen for the full-width demo --- */
+  .phone {
+    max-width: 300px; padding: 1rem; border-radius: 16px;
+    background: #0d1117; border: 1px solid var(--line);
+    display: grid; gap: .6rem;
+  }
+  .btn--ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  .btn--ghost:hover { background: #21262d; }
+
+  /* --- §7: line-height comparison --- */
+  .btn--tall-lh { line-height: 2.4; }         /* wastes vertical space */
+  .btn--wrapper { max-width: 9rem; text-align: center; } /* forces a 2-line label */
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 01 — Box Model, Sizing &amp; Spacing</h1>
+    <p>Size buttons with padding, hit a real 44px target, build a size scale two ways, go
+       full-width, and space rows with <code>gap</code>. Tab through to see
+       <code>:focus-visible</code>.</p>
+  </header>
+
+  <main>
+
+    <section class="card">
+      <h2>1 · Size scale — by <code>font-size</code> (§4a)</h2>
+      <p class="note">One <code>.btn</code> rule with <code>em</code> padding. Only
+         <code>font-size</code> changes between sm / md / lg — padding, gap, and radius all
+         scale with it. This is the <code>em</code> payoff.</p>
+      <div class="row">
+        <button class="btn btn--sm" type="button">Small</button>
+        <button class="btn btn--md" type="button">Medium</button>
+        <button class="btn btn--lg" type="button">Large</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Size scale — by padding tokens (§4b)</h2>
+      <p class="note">Here the <em>text</em> stays the same size; only the padding tokens
+         (<code>--btn-pad-y/x</code>) change. Use this when you want chunky buttons with
+         normal-sized words — independent control of box vs. type.</p>
+      <div class="row">
+        <button class="btn btn--tok btn--sm" type="button">Small</button>
+        <button class="btn btn--tok btn--md" type="button">Medium</button>
+        <button class="btn btn--tok btn--lg" type="button">Large</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Hit-target visualization (§3)</h2>
+      <p class="note">The pink patch is a <strong>44×44px</strong> fingertip. The left
+         button clears it comfortably. The right one ignores <code>min-height/width</code> —
+         see the gaps you'd miss on a phone.</p>
+      <div class="row hit-demo">
+        <div>
+          <div class="hit-wrap">
+            <button class="btn" type="button">Tap me</button>
+          </div>
+          <div class="hit-label">✅ ≥ 44px — easy to hit</div>
+        </div>
+        <div>
+          <div class="hit-wrap">
+            <button class="btn btn--tiny" type="button">Tap me</button>
+          </div>
+          <div class="hit-label">❌ too small — you'll miss</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Full-width mobile CTA (§5)</h2>
+      <p class="note">Inside this "phone," the primary action is
+         <code>display:flex; width:100%</code> — a block-level, full-width thumb target.
+         <code>border-box</code> keeps <code>width:100%</code> honest: padding included, no
+         overflow.</p>
+      <div class="row">
+        <div class="phone">
+          <button class="btn btn--block" type="button">Continue&nbsp;→</button>
+          <button class="btn btn--block btn--ghost" type="button">Not now</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Spaced button row &amp; toolbar (§6)</h2>
+      <p class="note">Spacing lives on the <em>container</em> via <code>gap</code>, never as
+         margins on the buttons. The row wraps cleanly on narrow screens; the toolbar pushes
+         the last action to the right with <code>margin-left:auto</code>.</p>
+      <div class="btn-row" style="margin-bottom:1rem">
+        <button class="btn" type="button">Save</button>
+        <button class="btn btn--ghost" type="button">Preview</button>
+        <button class="btn btn--ghost" type="button">Cancel</button>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn--icon" type="button" aria-label="Bold"><strong>B</strong></button>
+        <button class="btn btn--icon" type="button" aria-label="Italic"><em>I</em></button>
+        <button class="btn btn--icon" type="button" aria-label="Underline"><u>U</u></button>
+        <button class="btn btn--icon" type="button" aria-label="Link">🔗</button>
+        <span class="spacer"></span>
+        <button class="btn btn--icon" type="button" aria-label="Delete">🗑️</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · em-scaling: one slider's worth of control (§2)</h2>
+      <p class="note">The same single <code>.btn</code> rule at four font sizes. Everything —
+         padding, icon gap, corner radius — scales as one unit because it's all in
+         <code>em</code>. Change one number, resize the whole button.</p>
+      <div class="row" style="align-items:flex-end">
+        <button class="btn" type="button" style="font-size:.75rem">🚀 Launch</button>
+        <button class="btn" type="button" style="font-size:1rem">🚀 Launch</button>
+        <button class="btn" type="button" style="font-size:1.4rem">🚀 Launch</button>
+        <button class="btn" type="button" style="font-size:1.9rem">🚀 Launch</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · line-height &amp; vertical centering (§7)</h2>
+      <p class="note">Left: tight <code>line-height:1.2</code> — the label centers exactly.
+         Middle: a bloated <code>line-height:2.4</code> inflates the box with dead vertical
+         space. Right: a 2-line label stays centered because flexbox — not line-height — does
+         the positioning.</p>
+      <div class="row" style="align-items:flex-start">
+        <div>
+          <button class="btn" type="button">Tight 1.2</button>
+          <div class="hit-label">✅ line-height: 1.2</div>
+        </div>
+        <div>
+          <button class="btn btn--tall-lh" type="button">Bloated 2.4</button>
+          <div class="hit-label">❌ line-height: 2.4</div>
+        </div>
+        <div>
+          <button class="btn btn--wrapper" type="button">A label that wraps to two lines</button>
+          <div class="hit-label">✅ flex-centered, wrap-safe</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>

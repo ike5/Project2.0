@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 10 — The juicy call-to-action</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 1.25rem;
+    background: #0e1116; color: #e6edf3; font-family: system-ui, sans-serif;
+    text-align: center;
+  }
+  .hint { color: #8b949e; font-size: .9rem; margin: 0; }
+
+  /* One overshoot easing drives every spring/bounce in the file. */
+  :root { --spring: cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+  /* Baseline (Module 00), then layered motion. */
+  .cta {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .95em 1.8em; border-radius: 14px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff; font-weight: 700; font-size: 1.15rem; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    overflow: hidden;                       /* clips the staggered label reveal */
+    box-shadow: 0 4px 14px rgba(99, 102, 241, .4);
+
+    /* springy hover + shadow; entrance runs once on load */
+    transition:
+      transform  .4s var(--spring),
+      box-shadow .4s var(--spring);
+    animation: pop-in .55s var(--spring) both;
+    will-change: transform;
+  }
+
+  /* Req 2 — elastic entrance: scale 0 → past 1 → under 1 → 1, with a fade */
+  @keyframes pop-in {
+    0%   { transform: scale(0);    opacity: 0; }
+    60%  { transform: scale(1.1);  opacity: 1; }
+    80%  { transform: scale(0.95);            }
+    100% { transform: scale(1);               }
+  }
+
+  /* Stretch — stagger the icon and label in from below */
+  .cta .icon, .cta .label { display: inline-block; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(130%); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .cta .icon  { animation: rise .55s var(--spring) .1s both; }
+  .cta .label { animation: rise .55s var(--spring) .22s both; }
+
+  /* Req 3 + 4 — springy hover: lift, grow, bigger softer shadow */
+  .cta:hover,
+  .cta:focus-visible {
+    transform: translateY(-6px) scale(1.06);
+    box-shadow: 0 18px 38px rgba(99, 102, 241, .55);
+  }
+
+  /* Req 5 — press bounces: scale down FAST, release springs back on --spring */
+  .cta:active {
+    transform: translateY(-1px) scale(.92);
+    box-shadow: 0 8px 18px rgba(99, 102, 241, .5);
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+
+  /* Req 6 — visible focus ring, never a bare outline: none */
+  .cta:focus-visible { outline: 3px solid #c4b5fd; outline-offset: 4px; }
+
+  /* Stretch — idle "breathing" pulse after the entrance settles */
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.025); }
+  }
+  .cta.is-idle { animation: breathe 3.2s ease-in-out .6s infinite; }
+  /* hover/focus/press override the pulse cleanly */
+  .cta.is-idle:hover, .cta.is-idle:focus-visible, .cta.is-idle:active {
+    animation: none;
+  }
+
+  /* Req 7 — reduced-motion: no shows, but stay visible + keep instant feedback */
+  @media (prefers-reduced-motion: reduce) {
+    .cta {
+      animation: none; opacity: 1; transform: none;
+      transition-duration: .01ms;
+    }
+    .cta.is-idle { animation: none; }
+    .cta .icon, .cta .label {
+      animation: none; opacity: 1; transform: none;
+    }
+  }
+</style>
+</head>
+<body>
+  <!-- .is-idle adds the breathing pulse; drop it for the plain version. -->
+  <button class="cta is-idle" type="button">
+    <span class="icon" aria-hidden="true">🚀</span>
+    <span class="label">Start free trial</span>
+  </button>
+  <p class="hint">Reload for the entrance · hover / tab for the spring · press for the bounce
+     · turn on "reduce motion" to see it degrade</p>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 09 — Keyframe Animations · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — @keyframes animations
+     ========================================================= */
+
+  /* Baseline button (from Module 00), reused everywhere below */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 8px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { background: #3730a3; }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* --- 1 · PULSE: scale + expanding ring, to draw the eye --- */
+  @keyframes pulse {
+    0%, 100% { transform: scale(1);    }
+    50%      { transform: scale(1.06); }
+  }
+  @keyframes ping-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(79,70,229,.55); }
+    100% { box-shadow: 0 0 0 16px rgba(79,70,229,0); }
+  }
+  .cta-pulse { animation: pulse 1.6s ease-in-out infinite,
+                          ping-ring 1.6s ease-out infinite; }
+
+  /* --- 2 · SHIMMER / SKELETON: moving gradient highlight --- */
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .skeleton {
+    /* looks like a button-shaped placeholder */
+    width: 11rem; height: 2.6rem; border-radius: 8px; border: none;
+    background: linear-gradient(100deg, #1b2230 30%, #33405a 50%, #1b2230 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    color: transparent; cursor: progress;
+  }
+  .skeleton.line { height: 0.8rem; width: 8rem; border-radius: 5px; }
+
+  /* --- 3 · SPINNER inside a loading button --- */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 1.05em; height: 1.05em; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35);
+    border-top-color: #fff;
+    animation: spin 0.7s linear infinite;
+  }
+  /* a "loading" button: dims, shows the spinner, ignores clicks */
+  .btn.is-loading { background: #4338ca; cursor: progress; }
+
+  /* --- 4 · SHAKE: error feedback. Retriggerable on hover for the demo. --- */
+  @keyframes shake {
+    0%, 100%  { transform: translateX(0);   }
+    20%, 60%  { transform: translateX(-5px);}
+    40%, 80%  { transform: translateX(5px); }
+  }
+  .btn--error { background: #b91c1c; }
+  .btn--error:hover { background: #991b1b; animation: shake 0.4s ease-in-out both; }
+
+  /* --- 5 · SUCCESS: an SVG check that draws itself --- */
+  .btn--success { background: #15803d; }
+  .check-svg { width: 1.15em; height: 1.15em; display: block; }
+  .check-path {
+    fill: none; stroke: #fff; stroke-width: 3.2;
+    stroke-linecap: round; stroke-linejoin: round;
+    stroke-dasharray: 32; stroke-dashoffset: 32;
+    animation: draw 0.45s ease-out 0.15s forwards;   /* forwards = stay drawn */
+  }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  /* redraw on hover so you can watch it again */
+  .btn--success:hover .check-path { animation: draw 0.45s ease-out forwards; }
+
+  /* --- 6 · PLAY-STATE: pause a loop on hover --- */
+  .btn--float {
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .btn--float:hover { animation-play-state: paused; }  /* freeze while hovered */
+
+  /* --- 7 · LAYERING: float + glow, two clocks on one element --- */
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  @keyframes glow  { 0%,100% { box-shadow: 0 0 12px rgba(168,85,247,.35); }
+                     50%     { box-shadow: 0 0 26px rgba(168,85,247,.85); } }
+  .btn--alive {
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+    animation: float 3s ease-in-out infinite, glow 1.8s ease-in-out infinite;
+  }
+
+  /* ===== ACCESSIBILITY: honor reduced-motion for EVERY loop/attention effect ===== */
+  @media (prefers-reduced-motion: reduce) {
+    .cta-pulse, .skeleton, .btn--float, .btn--alive,
+    .btn--error:hover {
+      animation: none !important;
+    }
+    /* Functional motion → show the meaningful END STATE, statically */
+    .spinner { animation: none; border-top-color: #fff; opacity: .85; }
+    .check-path { animation: none; stroke-dashoffset: 0; }  /* just show the check */
+    .skeleton { background: #262f42; }                       /* a calm placeholder */
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 09 — Keyframe Animations</h1>
+    <p>Self-running motion with <code>@keyframes</code>: pulse, shimmer, spinner, shake, and
+       a self-drawing success check. Everything here animates with <strong>no JavaScript</strong>.
+       Turn on your OS "reduce motion" setting and reload to see it all calm down.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Pulsing CTA — "look at me"</h2>
+      <p class="note">A <code>scale</code> loop layered with an expanding <code>box-shadow</code>
+         ring (two comma-separated animations) draws the eye without shouting. Loops forever
+         via <code>infinite</code>.</p>
+      <div class="row">
+        <button class="btn cta-pulse" type="button">🚀 Get started</button>
+        <button class="btn" type="button">Secondary</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Shimmer / skeleton loading</h2>
+      <p class="note">A gradient <strong>wider than the box</strong>
+         (<code>background-size: 200%</code>) whose <code>background-position</code> slides a
+         highlight across it. The universal "content is loading" placeholder.</p>
+      <div class="row">
+        <button class="skeleton" type="button" aria-label="Loading" disabled></button>
+        <span class="skeleton line" aria-hidden="true"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Spinner inside a loading button</h2>
+      <p class="note">A circle with three visible border sides and one transparent
+         (<code>border-top-color</code> bright), spun <code>360deg linear infinite</code>.
+         <code>linear</code> keeps the spin perfectly even.</p>
+      <div class="row">
+        <button class="btn is-loading" type="button" disabled>
+          <span class="spinner" aria-hidden="true"></span> Saving…
+        </button>
+        <button class="btn is-loading" type="button" disabled aria-label="Loading">
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Shake on error (runs once)</h2>
+      <p class="note">A quick left-right <code>translateX</code> jitter that fires
+         <strong>once</strong> — hover to retrigger it here; in an app you'd add the class after a
+         failed action. Small travel, fast, never looping.</p>
+      <div class="row">
+        <button class="btn btn--error" type="button">⚠️ Hover me to shake</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Success — a self-drawing check</h2>
+      <p class="note">An inline SVG path animated via <code>stroke-dasharray</code> +
+         <code>stroke-dashoffset</code>, held with <code>fill-mode: forwards</code>. It draws on
+         load; hover to watch it draw again.</p>
+      <div class="row">
+        <button class="btn btn--success" type="button">
+          <svg class="check-svg" viewBox="0 0 24 24" aria-hidden="true">
+            <path class="check-path" d="M4 12.5 L10 18.5 L20 6.5" />
+          </svg>
+          Saved
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Pause a loop on hover (play-state)</h2>
+      <p class="note">Pure-CSS control: the button pulses until you hover, then
+         <code>animation-play-state: paused</code> freezes it in place — no reset, no JS.</p>
+      <div class="row">
+        <button class="btn btn--float" type="button">Hover to pause</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · Layering multiple animations</h2>
+      <p class="note">Two independent timelines on one element — a slow <code>float</code> and a
+         faster <code>glow</code> — running on their own clocks via a comma-separated
+         <code>animation</code> list.</p>
+      <div class="row">
+        <button class="btn btn--alive" type="button">✨ Alive</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Every looping effect is disabled or reduced under
+    <code>@media (prefers-reduced-motion: reduce)</code>.
+  </footer>
+</body>
+</html>

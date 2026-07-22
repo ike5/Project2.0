@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 02 — Token-driven semantic button set</title>
+<style>
+  :root {
+    /* -------- ONE base token per semantic role: the single source of truth -------- */
+    --c-primary:   #2563eb;   /* blue  */
+    --c-secondary: #475569;   /* slate */
+    --c-success:   #16a34a;   /* green */
+    --c-danger:    #dc2626;   /* red   */
+    --c-warning:   #f59e0b;   /* amber — LIGHT, needs dark text */
+    --c-info:      #0891b2;   /* cyan  — the "6th variant" proof */
+  }
+
+  body {
+    margin: 0; min-height: 100vh; padding: 3rem 1.5rem;
+    display: grid; place-content: center start; gap: 1.5rem;
+    background: #0e1116; color: #e6edf3;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 1.25rem; margin: 0; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+       color: #8b949e; margin: 1rem 0 0; font-weight: 700; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; max-width: 640px; }
+
+  /* ============================================================
+     ONE base button. Reads --base for its fill. Every variant
+     sets ONLY --base; states are derived from it below.
+     ============================================================ */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 9px;
+    color: #fff; line-height: 1.2;
+    font-weight: 600; letter-spacing: .01em; white-space: nowrap;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease, transform .05s ease;
+
+    --base: var(--c-primary);
+    background: var(--base);
+  }
+
+  /* Derived states — ONE rule set covers ALL variants, present and future */
+  .btn:hover  { background: color-mix(in srgb, var(--base) 88%, black); }
+  .btn:active { background: color-mix(in srgb, var(--base) 78%, black); transform: translateY(1px); }
+  .btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--base) 60%, white);
+                       outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Variants: each sets ONLY --base (+ text color where contrast demands it) */
+  .btn--secondary { --base: var(--c-secondary); }
+  .btn--success   { --base: var(--c-success); }
+  .btn--danger    { --base: var(--c-danger); }
+  .btn--warning   { --base: var(--c-warning); color: #1f2937; } /* dark ink → passes 4.5:1 */
+  .btn--info      { --base: var(--c-info); }                     /* the 6th variant: 2 lines total */
+
+  /* Uppercase variant with the mandatory optical adjustments */
+  .btn--caps {
+    text-transform: uppercase;
+    letter-spacing: .09em;    /* required so caps don't read as a wall */
+    font-weight: 700;
+    font-size: .82em;         /* compensate: caps look larger than lowercase */
+  }
+
+  /* Truncating variant */
+  .btn--truncate { max-width: 16ch; }
+  .btn--truncate .label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;             /* required inside a flex button */
+  }
+
+  /* STRETCH: soft/tinted counterparts — mix the SAME base toward transparent */
+  .btn--soft {
+    background: color-mix(in srgb, var(--base) 16%, transparent);
+    color: color-mix(in srgb, var(--base) 70%, white);
+  }
+  .btn--soft:hover  { background: color-mix(in srgb, var(--base) 26%, transparent); }
+  .btn--soft:active { background: color-mix(in srgb, var(--base) 34%, transparent); }
+</style>
+</head>
+<body>
+  <h1>Token-driven semantic buttons 🎨</h1>
+
+  <h2>Semantic set — hover &amp; press: states auto-derived from each base</h2>
+  <div class="row">
+    <button class="btn" type="button">Primary</button>
+    <button class="btn btn--secondary" type="button">Secondary</button>
+    <button class="btn btn--success" type="button">✓ Save</button>
+    <button class="btn btn--danger" type="button">🗑 Delete</button>
+    <button class="btn btn--warning" type="button">⚠ Caution</button>
+    <button class="btn btn--info" type="button">ℹ Info</button>
+  </div>
+
+  <h2>Uppercase label — properly tracked</h2>
+  <div class="row">
+    <button class="btn btn--caps" type="button">Get Started</button>
+    <button class="btn btn--success btn--caps" type="button">Save Changes</button>
+  </div>
+
+  <h2>Truncated long label — ellipsis, never wraps (hover for full text)</h2>
+  <div class="row">
+    <button class="btn btn--truncate" type="button"
+            title="Export the entire quarterly financial report as PDF">
+      <span class="label">Export the entire quarterly financial report as PDF</span>
+    </button>
+  </div>
+
+  <h2>Soft / tinted counterparts (stretch)</h2>
+  <div class="row">
+    <button class="btn btn--soft" type="button">Soft primary</button>
+    <button class="btn btn--soft btn--success" type="button">Soft success</button>
+    <button class="btn btn--soft btn--danger" type="button">Soft danger</button>
+  </div>
+
+  <h2>States: focus (tab to it) &amp; disabled</h2>
+  <div class="row">
+    <button class="btn" type="button">Tab to me</button>
+    <button class="btn btn--danger" type="button" disabled>Disabled</button>
+  </div>
+</body>
+</html>
