@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 07 — Transitions & Timing · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — Transitions & Timing Functions
+     ========================================================= */
+
+  /* Shared baseline button (from Module 00), no transition of its own —
+     each demo below adds exactly the transition it's teaching. */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---- 1 · The shorthand: transition a single property on hover ---- */
+  .shorthand {
+    /* property   duration   timing-function   delay */
+    transition: background-color 150ms ease 0ms;
+  }
+  .shorthand:hover  { background: #4338ca; }
+  .shorthand:active { background: #3730a3; }
+
+  /* ---- 2 · The five built-in easings, RACING side by side ----
+     Identical buttons, identical distance & duration — only the
+     timing-function differs. Hover ANY one to launch that row;
+     hover the whole track to launch all five at once and compare. */
+  .track {
+    display: grid; gap: .55rem; width: 100%;
+  }
+  .lane {
+    display: grid; grid-template-columns: 6.5rem 1fr;
+    align-items: center; gap: .75rem;
+  }
+  .lane .tag { color: var(--muted); font-size: .8rem; font-family: ui-monospace, monospace; }
+  .rail {
+    position: relative; height: 44px; border-radius: 10px;
+    background: #0d1117; border: 1px solid var(--line); overflow: hidden;
+  }
+  .racer {
+    position: absolute; top: 50%; left: 6px;
+    transform: translate(0, -50%);
+    width: 34px; height: 34px; border-radius: 8px;
+    background: linear-gradient(135deg, #818cf8, #4f46e5);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, .5);
+    /* 600ms so the curve shape is easy to read; distance set via translateX */
+    transition: transform 600ms;
+  }
+  /* All five travel the same distance; only the curve changes. */
+  .racer.linear      { transition-timing-function: linear; }
+  .racer.ease        { transition-timing-function: ease; }
+  .racer.ease-in     { transition-timing-function: ease-in; }
+  .racer.ease-out    { transition-timing-function: ease-out; }
+  .racer.ease-in-out { transition-timing-function: ease-in-out; }
+  /* Launch a lane on hover of that lane, OR hover the whole track —
+     every racer travels the exact same distance so the ONLY variable
+     you see is the easing curve. */
+  .lane:hover .racer,
+  .track:hover .racer { transform: translate(220px, -50%); }
+
+  /* ---- 3 · The hover-LIFT: transform + box-shadow (composited & smooth) ---- */
+  .lift {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .4);
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+  }
+  .lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 26px rgba(0, 0, 0, .5);
+  }
+  .lift:active {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, .45);
+  }
+
+  /* ---- 4 · Multi-property, different durations per property ----
+     Background is snappy (140ms); the lift & shadow are slower (280ms).
+     Written as an explicit comma list — never `transition: all`. */
+  .multi {
+    background: #0ea5e9;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .4);
+    transition:
+      background-color 140ms ease,
+      transform        280ms ease-out,
+      box-shadow       280ms ease-out;
+  }
+  .multi:hover {
+    background: #6366f1;
+    transform: translateY(-5px) scale(1.03);
+    box-shadow: 0 16px 30px rgba(99, 102, 241, .45);
+  }
+  .multi:active { transform: translateY(-1px) scale(1.0); }
+
+  /* Counter-example: the `transition: all` trap. Adds a hover border,
+     which `all` also animates — watch the padding/edge jump around. */
+  .trap {
+    background: #334155;
+    transition: all 250ms ease;   /* ⚠️ animates EVERYTHING, incl. the border */
+  }
+  .trap:hover {
+    background: #475569;
+    border: 4px solid #f59e0b;    /* box-model change gets animated → jank */
+    transform: translateY(-3px);
+  }
+
+  /* ---- 5 · Staggering: icon leads, label follows a beat later ---- */
+  .stagger .icon,
+  .stagger .label {
+    display: inline-block;
+    transition: transform 200ms ease-out;
+  }
+  .stagger:hover .icon  { transform: translateX(5px); transition-delay: 0ms; }
+  .stagger:hover .label { transform: translateX(5px); transition-delay: 90ms; }
+
+  /* ---- 6 · Asymmetric in vs. out ----
+     OUT (base rule): slower, ease-in — accelerates away as it settles.
+     IN (:hover rule): quick, ease-out — snaps up and settles crisply. */
+  .asym {
+    background: #4f46e5;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .4);
+    /* OUT timing */
+    transition:
+      transform  300ms ease-in,
+      background-color 300ms ease-in,
+      box-shadow 300ms ease-in;
+  }
+  .asym:hover {
+    /* IN timing — overrides the base transition while entering hover */
+    transition:
+      transform  130ms ease-out,
+      background-color 130ms ease-out,
+      box-shadow 130ms ease-out;
+    transform: translateY(-5px);
+    background: #7c3aed;
+    box-shadow: 0 16px 28px rgba(124, 58, 237, .5);
+  }
+
+  /* ---- Motion accessibility guard: reduce/remove movement ---- */
+  @media (prefers-reduced-motion: reduce) {
+    .racer,
+    .lane:hover .racer,
+    .track:hover .racer { transition: none; transform: translate(0, -50%); }
+    .lift, .lift:hover, .lift:active,
+    .multi, .multi:hover, .multi:active,
+    .trap, .trap:hover,
+    .stagger .icon, .stagger .label,
+    .stagger:hover .icon, .stagger:hover .label,
+    .asym, .asym:hover {
+      transition: none !important;
+      transform: none !important;
+    }
+    /* keep color feedback (not motion) so hover is still legible */
+    .multi:hover  { background: #6366f1; }
+    .asym:hover   { background: #7c3aed; }
+    .trap:hover   { border: 4px solid #f59e0b; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 07 — Transitions &amp; Timing Functions</h1>
+    <p>The journey between states. Hover, press, and race the easings below — motion is
+       guarded by <code>prefers-reduced-motion</code>, so it quiets if your OS asks.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · The shorthand — one property, one curve</h2>
+      <p class="note"><code>transition: background-color 150ms ease</code> on the base rule.
+         The color now glides instead of snapping. It lives on the base rule so it animates
+         both <em>into</em> and <em>out of</em> the hover.</p>
+      <div class="row">
+        <button class="btn shorthand" type="button">Hover me</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Race the five built-in easings</h2>
+      <p class="note">Identical buttons, identical distance, identical <code>600ms</code>
+         duration — <strong>only the timing-function differs</strong>. Hover one lane to
+         launch it, or hover the whole track to launch all five and watch them separate.
+         <code>linear</code> is mechanical; <code>ease-out</code> arrives gently;
+         <code>ease-in</code> yanks away.</p>
+      <div class="track">
+        <div class="lane"><span class="tag">linear</span>
+          <div class="rail"><span class="racer linear"></span></div></div>
+        <div class="lane"><span class="tag">ease</span>
+          <div class="rail"><span class="racer ease"></span></div></div>
+        <div class="lane"><span class="tag">ease-in</span>
+          <div class="rail"><span class="racer ease-in"></span></div></div>
+        <div class="lane"><span class="tag">ease-out</span>
+          <div class="rail"><span class="racer ease-out"></span></div></div>
+        <div class="lane"><span class="tag">ease-in-out</span>
+          <div class="rail"><span class="racer ease-in-out"></span></div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · The hover-lift — transform + shadow</h2>
+      <p class="note">Rises on hover via <code>transform: translateY(-4px)</code> (composited,
+         smooth) while the shadow grows to sell the height. Never animate <code>top</code> for
+         this — <code>transform</code> stays buttery. Press it to feel it push back down.
+         (Perf tease → Module 14.)</p>
+      <div class="row">
+        <button class="btn lift" type="button">Lift on hover</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Multiple properties, different durations — vs. the <code>all</code> trap</h2>
+      <p class="note">Left: an explicit comma list — background snaps in <code>140ms</code>
+         while the lift &amp; shadow take <code>280ms</code>. Right:
+         <code>transition: all</code> — it also animates the hover <em>border</em> nobody
+         meant to animate, so the edge jumps. Name your properties.</p>
+      <div class="row">
+        <button class="btn multi" type="button">Explicit list ✓</button>
+        <button class="btn trap" type="button">transition: all ⚠️</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Staggering with <code>delay</code></h2>
+      <p class="note">The arrow moves first; the label follows <code>90ms</code> later via
+         <code>transition-delay</code>. Same motion, but the small offset reads as
+         choreographed.</p>
+      <div class="row">
+        <button class="btn stagger" type="button">
+          <span class="icon" aria-hidden="true">→</span><span class="label">Continue</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Asymmetric in vs. out</h2>
+      <p class="note">Snaps up crisply on hover (<code>130ms ease-out</code>, set on
+         <code>:hover</code>) and settles back slowly (<code>300ms ease-in</code>, set on the
+         base rule). In ≠ out — the subtle asymmetry that reads as premium. Hover on, then off,
+         slowly.</p>
+      <div class="row">
+        <button class="btn asym" type="button">Feel the in/out</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>
