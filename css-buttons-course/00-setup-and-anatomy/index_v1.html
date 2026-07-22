@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>practice</title>
+    <style>
+        .btn1 {
+            appearance: none;
+            -webkit-appearance: none;
+            background: none;
+            border: none;
+
+            font: inherit;
+            color: inherit;
+
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+        }
+
+        .btn {
+            appearance: none;
+            border: none;
+            font: inherit;
+
+            /*box*/
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5em;
+            padding: 0.65em 1.25em;
+            border-radius: 8px;
+
+            /* look */
+            background: #4f46e5;
+            color: #fff;
+            font-weight: 600;
+            line-height: 1.2;
+
+            font-size: xx-large;
+
+            /*interaction*/
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+            transition: background-color 0.15s ease;
+        }
+        .btn:hover { background: #4338ca; }
+        .btn:active { background: #3730a3; } /* What happens when you click and it changes as you click */
+
+        .btn:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+<button class="btn" type="button">Hello</button>
+</body>
+</html>
