@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 00 — Baseline button</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 1.5rem;
+    background: #0e1116; font-family: system-ui, sans-serif;
+  }
+  .row { display: flex; gap: 1rem; align-items: center; justify-content: center; }
+
+  /* Base button — reusable */
+  .btn {
+    appearance: none; border: 2px solid transparent; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .65em 1.25em; border-radius: 10px;
+    background: #16a34a; color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease, transform .05s ease;
+  }
+  .btn:hover  { background: #15803d; }
+  .btn:active { transform: translateY(1px); background: #166534; }
+  .btn:focus-visible { outline: 2px solid #4ade80; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Secondary variant — reuses .btn, overrides look only */
+  .btn--secondary {
+    background: transparent; color: #4ade80; border-color: #4ade80;
+  }
+  .btn--secondary:hover  { background: rgba(74,222,128,.12); }
+  .btn--secondary:active { background: rgba(74,222,128,.2); }
+</style>
+</head>
+<body>
+  <div class="row">
+    <button class="btn" type="button">
+      <span aria-hidden="true">🚀</span> Get started
+    </button>
+    <button class="btn btn--secondary" type="button">Learn more</button>
+    <button class="btn" type="button" disabled>Get started</button>
+  </div>
+
+  <!-- Same .btn class, only font-size changed — grows proportionally -->
+  <div class="row">
+    <button class="btn" type="button" style="font-size: 1.4rem">Get started (large)</button>
+  </div>
+</body>
+</html>
