@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 14 — Refactor: bad button → accessible & performant</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; padding: 2rem;
+    display: grid; place-content: center; gap: 2rem;
+    background: #0e1116; color: #e6edf3;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .panel {
+    background: #161b22; border: 1px solid #30363d; border-radius: 14px;
+    padding: 1.5rem 1.75rem; width: min(520px, 92vw);
+  }
+  .panel h2 { font-size: 1rem; margin: 0 0 .2rem; }
+  .panel p  { color: #8b949e; font-size: .85rem; margin: 0 0 1.1rem; }
+  .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  .verdict { font-size: .78rem; font-weight: 700; letter-spacing: .03em; }
+  .verdict.bad  { color: #f87171; }
+  .verdict.good { color: #4ade80; }
+
+  /* ============================================================
+     ❌ BEFORE — the bad button (kept for comparison)
+     Tiny, gray-on-red, no focus, no border, animates width +
+     box-shadow (reflow + repaint), global will-change, no
+     reduced-motion guard, color-only meaning.
+     ============================================================ */
+  .bad {
+    font: 11px sans-serif;
+    padding: 3px 8px;
+    color: #9ca3af;
+    background: #dc2626;
+    border: none;
+    border-radius: 999px;
+    outline: none;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+    transition: width .3s ease, box-shadow .3s ease;
+    width: 90px;
+    will-change: width, box-shadow;
+    cursor: pointer;
+  }
+  .bad:hover {
+    width: 120px;
+    box-shadow: 0 8px 30px rgba(220,38,38,.7);
+  }
+
+  /* ============================================================
+     ✅ AFTER — the good button
+     ============================================================ */
+  .good {
+    /* reset + box */
+    appearance: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    /* (7) readable size, (4) 44×44 minimum hit target */
+    font-size: 1rem; font-weight: 700;
+    min-height: 44px; min-width: 44px;
+    padding: .6em 1.4em; border-radius: 999px;
+    /* (7) white on #dc2626 passes 4.5:1 */
+    color: #fff; background: #dc2626;
+    /* (6) keep a border slot so High Contrast has an edge to fill */
+    border: 2px solid transparent;
+    /* interaction */
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    /* (1) compositor-only motion: transform + opacity */
+    transition: transform .2s ease, background-color .2s ease;
+    position: relative;                 /* for the ::after glow */
+  }
+
+  /* (1) glow is PAINTED ONCE on ::after; we fade its opacity, never box-shadow */
+  .good::after {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    border-radius: inherit;
+    box-shadow: 0 8px 30px rgba(220,38,38,.7);
+    opacity: 0; transition: opacity .25s ease;
+  }
+  .good:hover::after { opacity: 1; }
+  .good > * { position: relative; z-index: 1; }
+
+  .good:active { background: #b91c1c; transform: translateY(1px); }
+
+  /* (3) focus-visible ring that survives on red AND on white:
+     white outline + dark halo. Never a bare outline:none. */
+  .good:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 5px #000;
+  }
+
+  /* (8) hover lift only where hovering is real → never sticks after a tap.
+     (2) will-change scoped to hover-intent, released when the pointer leaves. */
+  @media (hover: hover) {
+    .good:hover {
+      transform: translateY(-3px) scale(1.03);
+      background: #ef4444;
+      will-change: transform;
+    }
+  }
+
+  /* Stretch: opt-in breathing pulse ONLY for users who allow motion */
+  @media (prefers-reduced-motion: no-preference) {
+    .good .spark { animation: spark 1.8s ease-in-out infinite; }
+  }
+  @keyframes spark {
+    0%, 100% { transform: scale(1);   opacity: 1;  }
+    50%      { transform: scale(1.25); opacity: .6; }
+  }
+
+  /* (6) forced-colors / High Contrast: system colors + guaranteed edge */
+  @media (forced-colors: active) {
+    .good {
+      border: 2px solid ButtonText;
+      background: ButtonFace;
+      color: ButtonText;
+    }
+    .good:focus-visible {
+      outline: 2px solid Highlight; outline-offset: 3px; box-shadow: none;
+    }
+  }
+
+  /* (5) reduced-motion guard — near the end, global safety net + targeted calm */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+    .good:hover { transform: none; }   /* keep color feedback, drop the lift */
+  }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h2>❌ Before — the bad button</h2>
+    <p>Tiny 18px-tall target, gray-on-red (fails contrast), no focus ring, no border,
+       animates <code>width</code> + <code>box-shadow</code> (reflow + repaint), global
+       <code>will-change</code>, no reduced-motion guard, meaning by color alone.</p>
+    <div class="row">
+      <button class="bad">Buy now</button>
+      <span class="verdict bad">7+ violations</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>✅ After — accessible & performant</h2>
+    <p>Transform/opacity motion, opacity-faded glow, double-ring
+       <code>:focus-visible</code>, ≥44×44 target, 4.5:1 label, icon + word for meaning,
+       reduced-motion guard, forced-colors border, hover gated to real hover.</p>
+    <div class="row">
+      <button class="good" type="button">
+        <span class="spark" aria-hidden="true">🛒</span> Buy now — $29
+      </button>
+      <span class="verdict good">ships</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Try it</h2>
+    <p>Tab with the keyboard → visible ring (not on mouse click). Toggle OS "reduce motion" →
+       the lift and pulse stop, color feedback stays. Record a hover in DevTools → Performance
+       → the good button shows no Layout bars.</p>
+  </div>
+</body>
+</html>
