@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 15 — Capstone: Button Design System · CSS Buttons Course</title>
+
+<!-- In a real project this one line is all you need. It works when served over
+     http(s). We ALSO inline the identical CSS below so this gallery renders
+     standalone via file:// with no server. -->
+<link rel="stylesheet" href="solutions/buttons.css">
+
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* ---- demo-only helpers (not part of the system) ---- */
+  .subhead { color: var(--muted); font-size: .78rem; text-transform: uppercase;
+             letter-spacing: .06em; margin: 1.1rem 0 .5rem; }
+  .subhead:first-of-type { margin-top: 0; }
+  .theme-panel { border: 1px dashed var(--line); border-radius: 12px; padding: 1.1rem;
+                 flex: 1 1 320px; }
+  .theme-panel[data-theme="light"] { background: #f7f8fa; }
+  .theme-panel[data-theme="dark"]  { background: #0b0e13; }
+  .theme-panel h3 { margin: 0 0 .8rem; font-size: .85rem; letter-spacing: .04em;
+                    text-transform: uppercase; }
+  .theme-panel[data-theme="light"] h3 { color: #6b7280; }
+  .theme-panel[data-theme="dark"]  h3 { color: #8b949e; }
+  .panels { display: flex; flex-wrap: wrap; gap: 1rem; }
+  /* mini-UI scaffolding */
+  .ui {
+    background: #0d1117; border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem 1.15rem;
+  }
+  .ui .field { display: block; margin-bottom: .8rem; }
+  .ui label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .3rem; }
+  .ui input {
+    width: 100%; padding: .55rem .7rem; border-radius: 8px;
+    background: #010409; border: 1px solid var(--line); color: var(--ink); font: inherit;
+  }
+  .ui .actions { display: flex; gap: .6rem; justify-content: flex-end; margin-top: 1rem; }
+  .toolbar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+  .toolbar .sep { width: 1px; height: 1.6rem; background: var(--line); margin: 0 .2rem; }
+  .hero {
+    text-align: center; padding: 2rem 1rem;
+    background:
+      radial-gradient(120% 120% at 50% 0%, rgba(99,102,241,.22), transparent 60%),
+      #0d1117;
+    border: 1px solid var(--line); border-radius: 14px;
+  }
+  .hero h3 { margin: 0 0 .3rem; font-size: 1.4rem; }
+  .hero p  { margin: 0 0 1.3rem; color: var(--muted); }
+  .hero .row { justify-content: center; }
+
+  /* =========================================================================
+     THE ACTUAL LESSON CSS — an inlined copy of solutions/buttons.css so this
+     gallery works standalone via file://. In production you'd use ONLY the
+     <link> above. Keep this block in sync with solutions/buttons.css.
+     ========================================================================= */
+
+  /* 1. DESIGN TOKENS */
+  :root {
+    --btn-primary:#4f46e5; --btn-primary-hover:#4338ca; --btn-primary-active:#3730a3;
+    --btn-on-primary:#fff;
+    --btn-secondary:#e5e7eb; --btn-secondary-hover:#d1d5db; --btn-secondary-active:#c3c9d2;
+    --btn-on-secondary:#111827;
+    --btn-danger:#dc2626; --btn-danger-hover:#b91c1c; --btn-danger-active:#991b1b;
+    --btn-on-danger:#fff;
+    --btn-success:#16a34a; --btn-success-hover:#15803d; --btn-success-active:#166534;
+    --btn-on-success:#fff;
+    --btn-accent:var(--btn-primary); --btn-accent-ink:#4f46e5; --btn-ghost-line:currentColor;
+    --btn-tint:rgba(79,70,229,.10); --btn-tint-strong:rgba(79,70,229,.18);
+    --btn-disabled-fg:#9ca3af;
+    --btn-radius:10px; --btn-radius-sm:8px; --btn-radius-lg:12px; --btn-radius-pill:999px;
+    --btn-pad-y:.65em; --btn-pad-x:1.25em; --btn-gap:.5em; --btn-font:1rem;
+    --btn-weight:600; --btn-min-hit:2.75rem;
+    --btn-shadow-1:0 1px 2px rgba(16,24,40,.08),0 1px 3px rgba(16,24,40,.10);
+    --btn-shadow-2:0 4px 10px rgba(16,24,40,.12),0 2px 4px rgba(16,24,40,.08);
+    --btn-ease:cubic-bezier(.2,.7,.3,1); --btn-ease-out:cubic-bezier(.16,1,.3,1);
+    --btn-dur:.16s; --btn-dur-press:.05s;
+    --btn-focus-ring:#818cf8; --btn-focus-width:2px; --btn-focus-offset:2px;
+  }
+
+  /* 2. BASE */
+  .btn {
+    appearance:none; -webkit-appearance:none; margin:0;
+    border:1px solid transparent; font:inherit; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    gap:var(--btn-gap); vertical-align:middle;
+    padding:var(--btn-pad-y) var(--btn-pad-x); min-height:var(--btn-min-hit);
+    border-radius:var(--btn-radius);
+    font-size:var(--btn-font); font-weight:var(--btn-weight); line-height:1.2;
+    white-space:nowrap; text-align:center;
+    background:var(--btn-primary); color:var(--btn-on-primary);
+    cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none;
+    transition:
+      background-color var(--btn-dur) var(--btn-ease),
+      border-color var(--btn-dur) var(--btn-ease),
+      color var(--btn-dur) var(--btn-ease),
+      box-shadow var(--btn-dur) var(--btn-ease),
+      transform var(--btn-dur-press) var(--btn-ease-out);
+  }
+  .btn > svg { width:1.15em; height:1.15em; flex:0 0 auto; }
+  .btn > .btn__icon { display:inline-flex; flex:0 0 auto; }
+
+  /* 3. VARIANTS */
+  .btn--primary { background:var(--btn-primary); color:var(--btn-on-primary);
+                  box-shadow:var(--btn-shadow-1); }
+  .btn--primary:hover  { background:var(--btn-primary-hover); }
+  .btn--primary:active { background:var(--btn-primary-active); }
+  .btn--secondary { background:var(--btn-secondary); color:var(--btn-on-secondary); }
+  .btn--secondary:hover  { background:var(--btn-secondary-hover); }
+  .btn--secondary:active { background:var(--btn-secondary-active); }
+  .btn--ghost { background:transparent; color:var(--btn-accent-ink);
+                border-color:var(--btn-ghost-line); }
+  .btn--ghost:hover  { background:var(--btn-tint); }
+  .btn--ghost:active { background:var(--btn-tint-strong); }
+  .btn--danger { background:var(--btn-danger); color:var(--btn-on-danger);
+                 box-shadow:var(--btn-shadow-1); }
+  .btn--danger:hover  { background:var(--btn-danger-hover); }
+  .btn--danger:active { background:var(--btn-danger-active); }
+  .btn--success { background:var(--btn-success); color:var(--btn-on-success);
+                  box-shadow:var(--btn-shadow-1); }
+  .btn--success:hover  { background:var(--btn-success-hover); }
+  .btn--success:active { background:var(--btn-success-active); }
+  .btn--link { background:transparent; color:var(--btn-accent-ink); min-height:0;
+               padding-left:.25em; padding-right:.25em; box-shadow:none; }
+  .btn--link:hover  { text-decoration:underline; }
+  .btn--link:active { color:var(--btn-primary-active); }
+
+  /* 4. SIZES & SHAPES */
+  .btn--sm { --btn-font:.85rem; --btn-min-hit:2.25rem; border-radius:var(--btn-radius-sm); }
+  .btn--lg { --btn-font:1.15rem; --btn-min-hit:3.25rem; border-radius:var(--btn-radius-lg); }
+  .btn--pill { border-radius:var(--btn-radius-pill); }
+  .btn--icon { padding:0; width:var(--btn-min-hit); min-width:var(--btn-min-hit);
+               aspect-ratio:1; }
+  .btn--circle { padding:0; width:var(--btn-min-hit); min-width:var(--btn-min-hit);
+                 aspect-ratio:1; border-radius:50%; }
+
+  /* 5. UTILITIES */
+  .btn--block { display:flex; width:100%; }
+  .btn--raised { box-shadow:var(--btn-shadow-2); }
+  .btn--raised:active { box-shadow:var(--btn-shadow-1); }
+
+  /* 6. STATES */
+  .btn:active { transform:translateY(1px); }
+  .btn:focus-visible { outline:var(--btn-focus-width) solid var(--btn-focus-ring);
+                       outline-offset:var(--btn-focus-offset); }
+  .btn:disabled, .btn[aria-disabled="true"] {
+    cursor:not-allowed; opacity:.55; box-shadow:none; transform:none; pointer-events:none;
+  }
+  .btn[aria-pressed="true"] {
+    background:var(--btn-primary-active); color:var(--btn-on-primary);
+    border-color:transparent; box-shadow:inset 0 2px 4px rgba(0,0,0,.25);
+  }
+  .btn--ghost[aria-pressed="true"] {
+    background:var(--btn-tint-strong); color:var(--btn-accent-ink);
+    border-color:var(--btn-ghost-line); box-shadow:none;
+  }
+  .btn[aria-busy="true"] {
+    cursor:progress; color:transparent !important; pointer-events:none; position:relative;
+  }
+  .btn[aria-busy="true"] > * { visibility:hidden; }
+  .btn[aria-busy="true"]::after {
+    content:""; position:absolute; inset:0; margin:auto;
+    width:1.1em; height:1.1em; border-radius:50%;
+    border:2px solid rgba(255,255,255,.4); border-top-color:currentColor;
+    color:var(--btn-on-primary);
+    animation:btn-spin .7s linear infinite;
+  }
+  .btn--secondary[aria-busy="true"]::after,
+  .btn--ghost[aria-busy="true"]::after,
+  .btn--link[aria-busy="true"]::after {
+    color:var(--btn-accent-ink); border-color:rgba(0,0,0,.18); border-top-color:currentColor;
+  }
+  @keyframes btn-spin { to { transform:rotate(360deg); } }
+
+  /* 7. THEMING */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --btn-primary:#6366f1; --btn-primary-hover:#818cf8; --btn-primary-active:#4f46e5;
+      --btn-secondary:#21262d; --btn-secondary-hover:#2d333b; --btn-secondary-active:#363d47;
+      --btn-on-secondary:#e6edf3;
+      --btn-danger:#ef4444; --btn-danger-hover:#f87171; --btn-danger-active:#dc2626;
+      --btn-success:#22c55e; --btn-success-hover:#4ade80; --btn-success-active:#16a34a;
+      --btn-accent-ink:#a5b4fc; --btn-tint:rgba(129,140,248,.16);
+      --btn-tint-strong:rgba(129,140,248,.26); --btn-disabled-fg:#6b7280;
+      --btn-shadow-1:0 1px 2px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+      --btn-shadow-2:0 6px 16px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4);
+      --btn-focus-ring:#a5b4fc;
+    }
+  }
+  [data-theme="dark"] {
+    --btn-primary:#6366f1; --btn-primary-hover:#818cf8; --btn-primary-active:#4f46e5;
+    --btn-on-primary:#fff;
+    --btn-secondary:#21262d; --btn-secondary-hover:#2d333b; --btn-secondary-active:#363d47;
+    --btn-on-secondary:#e6edf3;
+    --btn-danger:#ef4444; --btn-danger-hover:#f87171; --btn-danger-active:#dc2626;
+    --btn-success:#22c55e; --btn-success-hover:#4ade80; --btn-success-active:#16a34a;
+    --btn-accent-ink:#a5b4fc; --btn-tint:rgba(129,140,248,.16);
+    --btn-tint-strong:rgba(129,140,248,.26); --btn-disabled-fg:#6b7280;
+    --btn-shadow-1:0 1px 2px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+    --btn-shadow-2:0 6px 16px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4);
+    --btn-focus-ring:#a5b4fc;
+  }
+  [data-theme="light"] {
+    --btn-primary:#4f46e5; --btn-primary-hover:#4338ca; --btn-primary-active:#3730a3;
+    --btn-on-primary:#fff;
+    --btn-secondary:#e5e7eb; --btn-secondary-hover:#d1d5db; --btn-secondary-active:#c3c9d2;
+    --btn-on-secondary:#111827;
+    --btn-danger:#dc2626; --btn-danger-hover:#b91c1c; --btn-danger-active:#991b1b;
+    --btn-success:#16a34a; --btn-success-hover:#15803d; --btn-success-active:#166534;
+    --btn-accent-ink:#4f46e5; --btn-tint:rgba(79,70,229,.10);
+    --btn-tint-strong:rgba(79,70,229,.18); --btn-disabled-fg:#9ca3af;
+    --btn-shadow-1:0 1px 2px rgba(16,24,40,.08),0 1px 3px rgba(16,24,40,.10);
+    --btn-shadow-2:0 4px 10px rgba(16,24,40,.12),0 2px 4px rgba(16,24,40,.08);
+    --btn-focus-ring:#818cf8;
+  }
+
+  /* 8. SAFETY NETS */
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: background-color var(--btn-dur) linear, color var(--btn-dur) linear; }
+    .btn:active { transform:none; }
+    .btn[aria-busy="true"]::after { animation:none; }
+  }
+  @media (forced-colors: active) {
+    .btn { border:1px solid ButtonText; forced-color-adjust:none; }
+    .btn:focus-visible { outline:2px solid Highlight; outline-offset:2px; }
+    .btn:disabled, .btn[aria-disabled="true"] { color:GrayText; border-color:GrayText; }
+    .btn[aria-busy="true"]::after { border-color:ButtonText; border-top-color:Highlight; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 15 — Capstone: A Button Design System</h1>
+    <p>One tokenized <code>.btn</code> base plus BEM modifiers = every button below. Tab
+       through them to see the keyboard-only <code>:focus-visible</code> ring. This gallery
+       inlines <code>solutions/buttons.css</code> so it runs from <code>file://</code>.</p>
+  </header>
+
+  <main>
+    <!-- VARIANTS -------------------------------------------------------------->
+    <section class="card">
+      <h2>1 · Variants</h2>
+      <p class="note">Emphasis, encoded. Each is <code>.btn</code> + one modifier that
+         repaints only background/color and reads from role tokens.</p>
+      <div class="row">
+        <button class="btn btn--primary"   type="button">Primary</button>
+        <button class="btn btn--secondary" type="button">Secondary</button>
+        <button class="btn btn--ghost"      type="button">Ghost</button>
+        <button class="btn btn--danger"     type="button">Danger</button>
+        <button class="btn btn--success"    type="button">Success</button>
+        <button class="btn btn--link"        type="button">Link-style</button>
+      </div>
+    </section>
+
+    <!-- SIZES ----------------------------------------------------------------->
+    <section class="card">
+      <h2>2 · Sizes</h2>
+      <p class="note">A size modifier changes only <code>--btn-font</code>; em-based padding
+         scales the rest. Same rule, proportional results.</p>
+      <div class="row">
+        <button class="btn btn--primary btn--sm" type="button">Small</button>
+        <button class="btn btn--primary"          type="button">Default</button>
+        <button class="btn btn--primary btn--lg" type="button">Large</button>
+      </div>
+    </section>
+
+    <!-- SHAPES ---------------------------------------------------------------->
+    <section class="card">
+      <h2>3 · Shapes</h2>
+      <p class="note">Pill (<code>999px</code>), plus square and round icon-only buttons.
+         Icon-only buttons carry an <code>aria-label</code> — no visible text to announce.</p>
+      <div class="row">
+        <button class="btn btn--primary btn--pill" type="button">Pill button</button>
+        <button class="btn btn--secondary btn--pill" type="button">
+          <span aria-hidden="true">⬇️</span> Download
+        </button>
+        <button class="btn btn--primary btn--icon" type="button" aria-label="Add item">
+          <span aria-hidden="true">＋</span>
+        </button>
+        <button class="btn btn--ghost btn--circle" type="button" aria-label="Settings">
+          <span aria-hidden="true">⚙️</span>
+        </button>
+        <button class="btn btn--danger btn--circle" type="button" aria-label="Delete">
+          <span aria-hidden="true">🗑️</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ICONS + LABEL --------------------------------------------------------->
+    <section class="card">
+      <h2>4 · Icons + labels</h2>
+      <p class="note">Icon support is built into the base via <code>gap</code>. An inline SVG
+         (or emoji) is just the first flex child; mark decorative icons
+         <code>aria-hidden</code>.</p>
+      <div class="row">
+        <button class="btn btn--primary" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14M12 5v14"/></svg>
+          New file
+        </button>
+        <button class="btn btn--success" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5"/></svg>
+          Save changes
+        </button>
+        <button class="btn btn--ghost" type="button">
+          Continue
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- STATES ---------------------------------------------------------------->
+    <section class="card">
+      <h2>5 · States</h2>
+      <p class="note">Every state is driven by a real attribute, so it's both shown and
+         announced. Loading uses <code>aria-busy</code> and keeps the button's width — no
+         reflow. The spin stops under reduced-motion.</p>
+
+      <p class="subhead">Disabled</p>
+      <div class="row">
+        <button class="btn btn--primary" type="button" disabled>Disabled (attr)</button>
+        <button class="btn btn--secondary" type="button" aria-disabled="true">aria-disabled</button>
+      </div>
+
+      <p class="subhead">Toggle · aria-pressed</p>
+      <div class="row">
+        <button class="btn btn--ghost" type="button" aria-pressed="false">Off</button>
+        <button class="btn btn--ghost" type="button" aria-pressed="true">On (pressed)</button>
+        <button class="btn btn--primary" type="button" aria-pressed="true">
+          <span aria-hidden="true">🔔</span> Subscribed
+        </button>
+      </div>
+
+      <p class="subhead">Loading · aria-busy</p>
+      <div class="row">
+        <button class="btn btn--primary" type="button" aria-busy="true">Saving…</button>
+        <button class="btn btn--secondary" type="button" aria-busy="true">Loading…</button>
+        <button class="btn btn--success btn--pill" type="button" aria-busy="true">
+          Publishing
+        </button>
+        <button class="btn btn--primary btn--circle" type="button"
+                aria-busy="true" aria-label="Loading"><span aria-hidden="true">↻</span></button>
+      </div>
+    </section>
+
+    <!-- DUAL THEME ------------------------------------------------------------>
+    <section class="card">
+      <h2>6 · Both themes, no JavaScript</h2>
+      <p class="note">The same markup twice. The left panel forces
+         <code>[data-theme="light"]</code>; the right forces <code>[data-theme="dark"]</code>.
+         Only the tokens change — the rules are identical.</p>
+      <div class="panels">
+        <div class="theme-panel" data-theme="light">
+          <h3>data-theme = light</h3>
+          <div class="row">
+            <button class="btn btn--primary"   type="button">Primary</button>
+            <button class="btn btn--secondary" type="button">Secondary</button>
+            <button class="btn btn--ghost"      type="button">Ghost</button>
+            <button class="btn btn--danger btn--pill" type="button">Delete</button>
+          </div>
+        </div>
+        <div class="theme-panel" data-theme="dark">
+          <h3>data-theme = dark</h3>
+          <div class="row">
+            <button class="btn btn--primary"   type="button">Primary</button>
+            <button class="btn btn--secondary" type="button">Secondary</button>
+            <button class="btn btn--ghost"      type="button">Ghost</button>
+            <button class="btn btn--danger btn--pill" type="button">Delete</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REAL-WORLD UI --------------------------------------------------------->
+    <section class="card">
+      <h2>7 · Real UI, built entirely from the system</h2>
+      <p class="note">A hero CTA, a form action row, and a toolbar — every button is just
+         <code>.btn</code> plus modifiers.</p>
+
+      <p class="subhead">Hero CTA</p>
+      <div class="hero">
+        <h3>Ship your first button today</h3>
+        <p>One stylesheet. Zero JavaScript. Infinite variants.</p>
+        <div class="row">
+          <button class="btn btn--primary btn--lg btn--pill btn--raised" type="button">
+            Get started free
+          </button>
+          <button class="btn btn--ghost btn--lg btn--pill" type="button">
+            View docs
+          </button>
+        </div>
+      </div>
+
+      <p class="subhead">Form action row</p>
+      <div class="ui" style="max-width:420px">
+        <label class="field">
+          <span>Workspace name</span>
+          <input type="text" value="Acme Inc." aria-label="Workspace name">
+        </label>
+        <label class="field">
+          <span>Billing email</span>
+          <input type="email" value="team@acme.com" aria-label="Billing email">
+        </label>
+        <div class="actions">
+          <button class="btn btn--link"      type="button">Cancel</button>
+          <button class="btn btn--secondary" type="button">Save draft</button>
+          <button class="btn btn--primary"   type="submit">Save changes</button>
+        </div>
+      </div>
+
+      <p class="subhead">Toolbar</p>
+      <div class="ui toolbar">
+        <button class="btn btn--ghost btn--sm btn--icon" type="button" aria-label="Bold">
+          <strong aria-hidden="true">B</strong>
+        </button>
+        <button class="btn btn--ghost btn--sm btn--icon" type="button" aria-label="Italic">
+          <em aria-hidden="true">I</em>
+        </button>
+        <button class="btn btn--ghost btn--sm btn--icon" type="button"
+                aria-label="Underline"><span aria-hidden="true" style="text-decoration:underline">U</span></button>
+        <span class="sep"></span>
+        <button class="btn btn--ghost btn--sm" type="button" aria-pressed="true">
+          <span aria-hidden="true">🔗</span> Link
+        </button>
+        <button class="btn btn--ghost btn--sm" type="button">
+          <span aria-hidden="true">💬</span> Comment
+        </button>
+        <span class="sep"></span>
+        <button class="btn btn--primary btn--sm" type="button">Publish</button>
+      </div>
+    </section>
+
+    <!-- FULL WIDTH ------------------------------------------------------------>
+    <section class="card">
+      <h2>8 · Block (full-width) buttons</h2>
+      <p class="note"><code>.btn--block</code> spans its container — ideal in narrow forms
+         and on mobile.</p>
+      <div style="max-width:360px; display:grid; gap:.6rem;">
+        <button class="btn btn--primary btn--block btn--lg" type="button">Continue</button>
+        <button class="btn btn--secondary btn--block" type="button">Maybe later</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Every button here is <code>.btn</code> + BEM modifiers, themed by CSS custom properties.
+    The production stylesheet is <code>solutions/buttons.css</code>; a clean consumer example
+    is <code>solutions/index.html</code>. View source to read the inlined system.
+  </footer>
+</body>
+</html>

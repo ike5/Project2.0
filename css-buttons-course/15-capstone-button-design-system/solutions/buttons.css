@@ -1,0 +1,459 @@
+/* =============================================================================
+   THE ART OF THE BUTTON — Capstone Button Design System
+   buttons.css · a drop-in, tokenized, accessible button library
+   -----------------------------------------------------------------------------
+   HTML + CSS only. No JS. Themeable via CSS custom properties.
+   Drop this file into any project and use the classes documented in README.md.
+
+   ARCHITECTURE
+     1. Design tokens        → :root custom properties (the single source of truth)
+     2. Base .btn            → the reset + layout every button shares
+     3. Variant modifiers    → .btn--primary / secondary / ghost / danger / …
+     4. Size & shape mods     → .btn--sm / --lg / --pill / --icon / --circle
+     5. State handling        → [disabled] · [aria-pressed] · [aria-busy] loading
+     6. Utilities             → .btn--block · icon support
+     7. Theming               → prefers-color-scheme + [data-theme] override
+     8. Safety nets           → reduced-motion · focus-visible · forced-colors
+   ============================================================================= */
+
+
+/* =============================================================================
+   1. DESIGN TOKENS  (Module 02 color · Module 03 radius · Module 05 elevation
+                      Module 07/08 easing · Module 06 focus)
+   -----------------------------------------------------------------------------
+   Every visual decision lives here as a named custom property. Change a token
+   and the whole system re-themes — no rule below hard-codes a raw value.
+   ============================================================================= */
+:root {
+  /* --- Color roles: named by JOB, not by hue, so themes can swap them ------- */
+  --btn-primary:        #4f46e5;   /* brand action                */
+  --btn-primary-hover:  #4338ca;
+  --btn-primary-active: #3730a3;
+  --btn-on-primary:     #ffffff;   /* text/icon on a primary fill */
+
+  --btn-secondary:        #e5e7eb; /* neutral surface             */
+  --btn-secondary-hover:  #d1d5db;
+  --btn-secondary-active: #c3c9d2;
+  --btn-on-secondary:     #111827;
+
+  --btn-danger:        #dc2626;
+  --btn-danger-hover:  #b91c1c;
+  --btn-danger-active: #991b1b;
+  --btn-on-danger:     #ffffff;
+
+  --btn-success:        #16a34a;
+  --btn-success-hover:  #15803d;
+  --btn-success-active: #166534;
+  --btn-on-success:     #ffffff;
+
+  /* Ghost & link derive their color from the accent role. */
+  --btn-accent:      var(--btn-primary);
+  --btn-accent-ink:  #4f46e5;      /* readable accent text on the page bg */
+  --btn-ghost-line:  currentColor; /* ghost border tracks its text color  */
+  --btn-tint:        rgba(79, 70, 229, .10); /* faint accent wash on hover */
+  --btn-tint-strong: rgba(79, 70, 229, .18);
+
+  --btn-disabled-fg: #9ca3af;
+
+  /* --- Radius scale (Module 03) -------------------------------------------- */
+  --btn-radius:      10px;   /* default corner       */
+  --btn-radius-sm:   8px;
+  --btn-radius-lg:   12px;
+  --btn-radius-pill: 999px;  /* absurdly large = pill regardless of width */
+
+  /* --- Spacing / size scale (Module 01) ----------------------------------- */
+  /* em-based padding scales with font-size — one rule, proportional buttons. */
+  --btn-pad-y:   0.65em;
+  --btn-pad-x:   1.25em;
+  --btn-gap:     0.5em;    /* icon ↔ label gap (Module 11) */
+  --btn-font:    1rem;     /* base label size; --sm/--lg only change this */
+  --btn-weight:  600;
+  --btn-min-hit: 2.75rem;  /* ~44px minimum touch target (Module 14) */
+
+  /* --- Elevation / shadow scale (Module 05) ------------------------------- */
+  --btn-shadow-1: 0 1px 2px rgba(16, 24, 40, .08),
+                  0 1px 3px rgba(16, 24, 40, .10);
+  --btn-shadow-2: 0 4px 10px rgba(16, 24, 40, .12),
+                  0 2px 4px  rgba(16, 24, 40, .08);
+  --btn-shadow-focus-inset: none;
+
+  /* --- Easing tokens (Module 07 / 08) ------------------------------------- */
+  --btn-ease:       cubic-bezier(.2, .7, .3, 1);   /* smooth, slightly eager */
+  --btn-ease-out:   cubic-bezier(.16, 1, .3, 1);   /* decisive settle        */
+  --btn-dur:        .16s;
+  --btn-dur-press:  .05s;
+
+  /* --- Focus ring (Module 06) --------------------------------------------- */
+  --btn-focus-ring:   #818cf8;
+  --btn-focus-width:  2px;
+  --btn-focus-offset: 2px;
+}
+
+
+/* =============================================================================
+   2. BASE  .btn  (Module 00 reset + Module 11 layout)
+   -----------------------------------------------------------------------------
+   The reset and layout EVERY button shares. Variants only override "look."
+   ============================================================================= */
+.btn {
+  /* reset the OS chrome (Module 00) */
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  border: 1px solid transparent;   /* reserved so outline variants don't reflow */
+  font: inherit;                   /* buttons don't inherit font — fix that */
+  text-decoration: none;           /* so <a class="btn"> looks like a button */
+
+  /* layout: inline-flex centers content and hosts an optional icon (Module 11) */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--btn-gap);
+  vertical-align: middle;
+
+  /* box (Module 01) */
+  padding: var(--btn-pad-y) var(--btn-pad-x);
+  min-height: var(--btn-min-hit);
+  border-radius: var(--btn-radius);
+
+  /* type (Module 02) */
+  font-size: var(--btn-font);
+  font-weight: var(--btn-weight);
+  line-height: 1.2;
+  white-space: nowrap;             /* labels never wrap mid-word */
+  text-align: center;
+
+  /* default look = primary; every variant re-paints these three lines */
+  background: var(--btn-primary);
+  color: var(--btn-on-primary);
+
+  /* interaction (Module 00 / 06) */
+  cursor: pointer;
+  touch-action: manipulation;      /* kill 300ms tap delay + double-tap zoom */
+  user-select: none;
+  -webkit-user-select: none;
+
+  /* motion (Module 07) — only cheap, compositor-friendly properties animate */
+  transition:
+    background-color var(--btn-dur) var(--btn-ease),
+    border-color     var(--btn-dur) var(--btn-ease),
+    color            var(--btn-dur) var(--btn-ease),
+    box-shadow       var(--btn-dur) var(--btn-ease),
+    transform        var(--btn-dur-press) var(--btn-ease-out);
+}
+
+/* Icons carried inside a button (emoji span or inline SVG) — Module 11 */
+.btn > svg { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+.btn > .btn__icon { display: inline-flex; flex: 0 0 auto; }
+
+
+/* =============================================================================
+   3. VARIANTS  (BEM modifiers — reuse .btn, override only the paint)
+   ============================================================================= */
+
+/* Primary — the one high-emphasis action per view */
+.btn--primary {
+  background: var(--btn-primary);
+  color: var(--btn-on-primary);
+  box-shadow: var(--btn-shadow-1);
+}
+.btn--primary:hover  { background: var(--btn-primary-hover); }
+.btn--primary:active { background: var(--btn-primary-active); }
+
+/* Secondary — neutral, medium-emphasis */
+.btn--secondary {
+  background: var(--btn-secondary);
+  color: var(--btn-on-secondary);
+}
+.btn--secondary:hover  { background: var(--btn-secondary-hover); }
+.btn--secondary:active { background: var(--btn-secondary-active); }
+
+/* Ghost — transparent fill, outlined; low-emphasis / secondary actions */
+.btn--ghost {
+  background: transparent;
+  color: var(--btn-accent-ink);
+  border-color: var(--btn-ghost-line);
+}
+.btn--ghost:hover  { background: var(--btn-tint); }
+.btn--ghost:active { background: var(--btn-tint-strong); }
+
+/* Danger — destructive actions (delete, remove) */
+.btn--danger {
+  background: var(--btn-danger);
+  color: var(--btn-on-danger);
+  box-shadow: var(--btn-shadow-1);
+}
+.btn--danger:hover  { background: var(--btn-danger-hover); }
+.btn--danger:active { background: var(--btn-danger-active); }
+
+/* Success — confirm / save / complete */
+.btn--success {
+  background: var(--btn-success);
+  color: var(--btn-on-success);
+  box-shadow: var(--btn-shadow-1);
+}
+.btn--success:hover  { background: var(--btn-success-hover); }
+.btn--success:active { background: var(--btn-success-active); }
+
+/* Link — looks like a hyperlink, behaves like a button */
+.btn--link {
+  background: transparent;
+  color: var(--btn-accent-ink);
+  min-height: 0;
+  padding-left: .25em;
+  padding-right: .25em;
+  box-shadow: none;
+}
+.btn--link:hover  { text-decoration: underline; }
+.btn--link:active { color: var(--btn-primary-active); }
+
+
+/* =============================================================================
+   4. SIZES & SHAPES  (Module 01 sizing · Module 03 shapes)
+   -----------------------------------------------------------------------------
+   Sizes only change --btn-font; em-based padding does the rest (Module 00).
+   ============================================================================= */
+.btn--sm {
+  --btn-font: .85rem;
+  --btn-min-hit: 2.25rem;
+  border-radius: var(--btn-radius-sm);
+}
+.btn--lg {
+  --btn-font: 1.15rem;
+  --btn-min-hit: 3.25rem;
+  border-radius: var(--btn-radius-lg);
+}
+
+/* Pill — fully rounded ends at any width (999px beats 50%, which ellipses) */
+.btn--pill { border-radius: var(--btn-radius-pill); }
+
+/* Icon-only — a square button holding a single glyph, no visible text label.
+   REQUIRES an aria-label on the element (see README). */
+.btn--icon {
+  padding: 0;
+  width: var(--btn-min-hit);
+  min-width: var(--btn-min-hit);
+  aspect-ratio: 1;          /* stays square as size scales */
+}
+/* Round icon button = icon + pill radius */
+.btn--circle {
+  padding: 0;
+  width: var(--btn-min-hit);
+  min-width: var(--btn-min-hit);
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+
+/* =============================================================================
+   5. UTILITIES
+   ============================================================================= */
+/* Full-width block button — spans its container (great on mobile / forms) */
+.btn--block { display: flex; width: 100%; }
+
+/* Elevated — opt into the deeper shadow (Module 05) */
+.btn--raised { box-shadow: var(--btn-shadow-2); }
+.btn--raised:active { box-shadow: var(--btn-shadow-1); }
+
+
+/* =============================================================================
+   6. STATES  (Module 06 · Module 09 loading)
+   ============================================================================= */
+
+/* Press — a 1px "give" (Module 06). Reads as tactile, costs nothing. */
+.btn:active { transform: translateY(1px); }
+
+/* Focus — keyboard-only ring; never a bare outline:none (Module 06 / 14) */
+.btn:focus-visible {
+  outline: var(--btn-focus-width) solid var(--btn-focus-ring);
+  outline-offset: var(--btn-focus-offset);
+}
+
+/* Disabled — real attribute (out of tab order) or aria-disabled (announced) */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .55;
+  box-shadow: none;
+  transform: none;                 /* no press-give when disabled */
+  pointer-events: none;            /* :disabled already blocks; belt & braces */
+}
+
+/* Toggle — key the LOOK off aria-pressed so "pressed" is announced AND shown
+   (Module 06). Avoids the "looks on, reads off" bug. */
+.btn[aria-pressed="true"] {
+  background: var(--btn-primary-active);
+  color: var(--btn-on-primary);
+  border-color: transparent;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .25);
+}
+.btn--ghost[aria-pressed="true"] {
+  background: var(--btn-tint-strong);
+  color: var(--btn-accent-ink);
+  border-color: var(--btn-ghost-line);
+  box-shadow: none;
+}
+
+/* Loading — driven by aria-busy so assistive tech hears "busy" (Module 09/14).
+   The label is dimmed to transparent and a spinner is painted in the center,
+   so the button keeps its width and does not reflow. */
+.btn[aria-busy="true"] {
+  cursor: progress;
+  color: transparent !important;   /* hide the label, keep its box */
+  pointer-events: none;
+  position: relative;
+}
+.btn[aria-busy="true"] > * { visibility: hidden; }  /* hide icon too */
+.btn[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .4);   /* faint track */
+  border-top-color: currentColor;              /* one bright arc */
+  color: var(--btn-on-primary);                /* spinner arc color */
+  animation: btn-spin .7s linear infinite;     /* linear = no stutter */
+}
+/* On light-fill variants the arc must be dark to be visible */
+.btn--secondary[aria-busy="true"]::after,
+.btn--ghost[aria-busy="true"]::after,
+.btn--link[aria-busy="true"]::after {
+  color: var(--btn-accent-ink);
+  border-color: rgba(0, 0, 0, .18);
+  border-top-color: currentColor;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+
+/* =============================================================================
+   7. THEMING  (Module 02 / 14)
+   -----------------------------------------------------------------------------
+   Two ways to go dark, and both just re-point the tokens — no rule changes:
+     (a) prefers-color-scheme  → follows the OS automatically
+     (b) [data-theme="dark"]   → explicit override on any ancestor (user toggle)
+   A [data-theme="light"] block lets you force light inside a dark OS too.
+   ============================================================================= */
+
+/* Reusable token payloads via a helper: define once, apply in both places. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --btn-primary:        #6366f1;
+    --btn-primary-hover:  #818cf8;
+    --btn-primary-active: #4f46e5;
+    --btn-on-primary:     #ffffff;
+
+    --btn-secondary:        #21262d;
+    --btn-secondary-hover:  #2d333b;
+    --btn-secondary-active: #363d47;
+    --btn-on-secondary:     #e6edf3;
+
+    --btn-danger:        #ef4444;
+    --btn-danger-hover:  #f87171;
+    --btn-danger-active: #dc2626;
+
+    --btn-success:        #22c55e;
+    --btn-success-hover:  #4ade80;
+    --btn-success-active: #16a34a;
+
+    --btn-accent-ink:  #a5b4fc;
+    --btn-tint:        rgba(129, 140, 248, .16);
+    --btn-tint-strong: rgba(129, 140, 248, .26);
+    --btn-disabled-fg: #6b7280;
+
+    --btn-shadow-1: 0 1px 2px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
+    --btn-shadow-2: 0 6px 16px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+    --btn-focus-ring: #a5b4fc;
+  }
+}
+
+/* Explicit override — wins over prefers-color-scheme because it's a real
+   ancestor scope. Put data-theme on <html>, <body>, or any wrapper. */
+[data-theme="dark"] {
+  --btn-primary:        #6366f1;
+  --btn-primary-hover:  #818cf8;
+  --btn-primary-active: #4f46e5;
+  --btn-on-primary:     #ffffff;
+
+  --btn-secondary:        #21262d;
+  --btn-secondary-hover:  #2d333b;
+  --btn-secondary-active: #363d47;
+  --btn-on-secondary:     #e6edf3;
+
+  --btn-danger:        #ef4444;
+  --btn-danger-hover:  #f87171;
+  --btn-danger-active: #dc2626;
+
+  --btn-success:        #22c55e;
+  --btn-success-hover:  #4ade80;
+  --btn-success-active: #16a34a;
+
+  --btn-accent-ink:  #a5b4fc;
+  --btn-tint:        rgba(129, 140, 248, .16);
+  --btn-tint-strong: rgba(129, 140, 248, .26);
+  --btn-disabled-fg: #6b7280;
+
+  --btn-shadow-1: 0 1px 2px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
+  --btn-shadow-2: 0 6px 16px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  --btn-focus-ring: #a5b4fc;
+}
+
+/* Force light even inside a dark OS — re-assert the default (light) tokens. */
+[data-theme="light"] {
+  --btn-primary:        #4f46e5;
+  --btn-primary-hover:  #4338ca;
+  --btn-primary-active: #3730a3;
+  --btn-on-primary:     #ffffff;
+
+  --btn-secondary:        #e5e7eb;
+  --btn-secondary-hover:  #d1d5db;
+  --btn-secondary-active: #c3c9d2;
+  --btn-on-secondary:     #111827;
+
+  --btn-danger:        #dc2626;
+  --btn-danger-hover:  #b91c1c;
+  --btn-danger-active: #991b1b;
+
+  --btn-success:        #16a34a;
+  --btn-success-hover:  #15803d;
+  --btn-success-active: #166534;
+
+  --btn-accent-ink:  #4f46e5;
+  --btn-tint:        rgba(79, 70, 229, .10);
+  --btn-tint-strong: rgba(79, 70, 229, .18);
+  --btn-disabled-fg: #9ca3af;
+
+  --btn-shadow-1: 0 1px 2px rgba(16, 24, 40, .08), 0 1px 3px rgba(16, 24, 40, .10);
+  --btn-shadow-2: 0 4px 10px rgba(16, 24, 40, .12), 0 2px 4px rgba(16, 24, 40, .08);
+  --btn-focus-ring: #818cf8;
+}
+
+
+/* =============================================================================
+   8. SAFETY NETS  (Module 14)
+   ============================================================================= */
+
+/* Respect reduced-motion — kill the spinner spin and press transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: background-color var(--btn-dur) linear,
+                color var(--btn-dur) linear;
+  }
+  .btn:active { transform: none; }
+  .btn[aria-busy="true"]::after { animation: none; }  /* static ring, still visible */
+}
+
+/* Windows High Contrast / forced-colors: don't let our custom colors erase the
+   system palette. Keep a real border so shape survives, and use system focus. */
+@media (forced-colors: active) {
+  .btn {
+    border: 1px solid ButtonText;
+    forced-color-adjust: none;
+  }
+  .btn:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+  .btn:disabled,
+  .btn[aria-disabled="true"] { color: GrayText; border-color: GrayText; }
+  .btn[aria-busy="true"]::after { border-color: ButtonText; border-top-color: Highlight; }
+}
