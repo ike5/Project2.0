@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 03 — Pill, circle & custom shape</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 2rem;
+    padding: 2rem; background: #0e1116; color: #e6edf3;
+    font-family: system-ui, sans-serif;
+  }
+  .row { display: flex; gap: 1rem; align-items: center; justify-content: center;
+         flex-wrap: wrap; }
+  .caption { text-align: center; color: #8b949e; font-size: .85rem; margin: 0 0 -1rem; }
+
+  /* ---- shared base button (reset + centering + focus ring) ---- */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .7em 1.4em; background: #4f46e5; color: #fff;
+    font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .15s ease, color .15s ease, transform .05s ease;
+  }
+  .btn:hover  { background: #4338ca; }
+  .btn:active { background: #3730a3; transform: translateY(1px); }
+  /* outline reserves no space → the ring survives even on clipped shapes */
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+
+  /* ---- 1 · pill: huge radius clamps to half the height -------- */
+  .btn--pill { border-radius: 999px; }
+
+  /* ---- 2 · circular icon button (ghost variant) -------------- */
+  .btn--icon {
+    width: 52px; height: 52px; padding: 0;          /* square box */
+    border-radius: 50%; font-size: 1.3rem;
+    background: transparent; color: #34d399;
+    border: 2px solid currentColor;                 /* border present at rest */
+  }
+  .btn--icon:hover  { background: #34d399; color: #0e1116; }  /* fills, no layout jump */
+  .btn--icon:active { background: #10b981; }
+
+  /* ---- 3 · custom shapes: arrow + ticket --------------------- */
+  .btn--arrow {
+    background: #0ea5e9; padding: .7em 2em .7em 1.4em;   /* room for the point */
+    clip-path: polygon(
+      0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%
+    );
+  }
+  .btn--arrow:hover  { background: #0284c7; }
+  .btn--arrow:active { background: #0369a1; }
+
+  .btn--ticket {
+    position: relative;
+    background: #f59e0b; color: #1c1400; padding: .7em 1.7em;
+    clip-path: polygon(
+      0 0, 100% 0,
+      100% 38%, calc(100% - 6px) 50%, 100% 62%,      /* right notch */
+      100% 100%, 0 100%,
+      0 62%, 6px 50%, 0 38%                           /* left notch */
+    );
+  }
+  .btn--ticket:hover  { background: #d97706; }
+  .btn--ticket:active { background: #b45309; }
+  .btn--ticket::before {                              /* stretch: punched hole */
+    content: ""; position: absolute; left: 12px; top: 50%;
+    width: 8px; height: 8px; border-radius: 50%;
+    transform: translateY(-50%);
+    background: #0e1116; pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition-duration: .001ms; }
+  }
+</style>
+</head>
+<body>
+  <p class="caption">Pill — stays a pill at any label length</p>
+  <div class="row">
+    <button class="btn btn--pill" type="button">Go</button>
+    <button class="btn btn--pill" type="button">Continue to checkout now</button>
+  </div>
+
+  <p class="caption">Circular icon button — ghost circle with an aria-label</p>
+  <div class="row">
+    <button class="btn btn--icon" type="button" aria-label="Add to favorites">
+      <span aria-hidden="true">♥</span>
+    </button>
+  </div>
+
+  <p class="caption">Custom clip-path shapes — arrow and ticket</p>
+  <div class="row">
+    <button class="btn btn--arrow" type="button">Next</button>
+    <button class="btn btn--ticket" type="button">Admit one</button>
+  </div>
+</body>
+</html>
