@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 08 — Bézier Curves & Custom Easing · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — Bézier curves & custom easing
+     =========================================================
+
+     Store every curve once as a token, then reach for it by feel.
+     x1/x2 (time) stay in 0–1; y1/y2 (progress) may go negative or
+     above 1 — that's what creates anticipation and overshoot.        */
+  :root {
+    /* --- built-in keyword equivalents --- */
+    --ease-standard:    cubic-bezier(0.25, 0.1,  0.25, 1);
+    --ease-in:          cubic-bezier(0.42, 0,    1,    1);
+    --ease-out:         cubic-bezier(0,    0,    0.58, 1);
+    --ease-in-out:      cubic-bezier(0.42, 0,    0.58, 1);
+    --linear:           cubic-bezier(0,    0,    1,    1);
+
+    /* --- decelerate: for things arriving / entering --- */
+    --ease-out-quart:   cubic-bezier(0.25, 1,    0.5,  1);
+    --ease-out-expo:    cubic-bezier(0.16, 1,    0.3,  1);
+    --ease-out-circ:    cubic-bezier(0,    0.55, 0.45, 1);
+
+    /* --- overshoot ("back"): y2 > 1 → pops past target, settles --- */
+    --ease-out-back:      cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-out-back-soft: cubic-bezier(0.22, 1.2,  0.36, 1);
+
+    /* --- anticipation: y1 < 0 → winds up backwards first --- */
+    --ease-anticipate:  cubic-bezier(0.36, -0.6, 0.66, -0.56);
+
+    /* --- symmetric: deliberate moves both directions --- */
+    --ease-in-out-cubic: cubic-bezier(0.65, 0,   0.35, 1);
+    --ease-in-out-back:  cubic-bezier(0.68, -0.6, 0.32, 1.6);
+
+    /* --- linear(): a true multi-bounce (Chrome 113+/FF 112+/Safari 17.4+) --- */
+    --bounce: linear(
+      0, 0.063, 0.25, 0.563, 1 36%, 0.813, 0.75, 0.813,
+      1 72%, 0.938, 0.938, 1
+    );
+  }
+
+  /* Baseline button, styled once, reused everywhere below */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .6em 1.1em; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  .btn:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---------- Card 1 · Comparison grid: same move, four curves ---------- */
+  .track {
+    display: grid; grid-template-columns: 7rem 1fr; align-items: center;
+    gap: .35rem 1rem; width: 100%;
+  }
+  .track > span { color: var(--muted); font-size: .8rem; font-family: ui-monospace, monospace; }
+  .lane {
+    position: relative; height: 3rem; border-radius: 10px;
+    background: #0d1117; border: 1px solid var(--line);
+    display: flex; align-items: center; padding: 0 .4rem;
+  }
+  /* the runner sits at the left; hovering the lane sends it across */
+  .runner {
+    padding: .45em .9em; border-radius: 8px; font-size: .85rem;
+    background: var(--accent); color: #fff; font-weight: 600; white-space: nowrap;
+    transition: transform .7s var(--curve, linear);
+  }
+  .lane:hover .runner,
+  .lane:focus-within .runner { transform: translateX(calc(100% + 1rem)); }
+  .lane.linear  { --curve: var(--linear); }
+  .lane.out     { --curve: var(--ease-out); }
+  .lane.back    { --curve: var(--ease-out-back); }
+  .lane.expo    { --curve: var(--ease-out-expo); }
+  .runner:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+
+  /* ---------- Card 2 · Overshoot vs. anticipation ---------- */
+  .stage {
+    position: relative; height: 5.5rem; flex: 1 1 14rem; min-width: 12rem;
+    background: #0d1117; border: 1px solid var(--line); border-radius: 12px;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  .stage small { position: absolute; top: .4rem; left: .6rem; color: var(--muted); font-size: .72rem; }
+  .puck {
+    width: 3.2rem; height: 3.2rem; border-radius: 14px; display: grid; place-items: center;
+    font-size: 1.4rem; color: #fff; background: linear-gradient(145deg,#6366f1,#a855f7);
+    box-shadow: 0 8px 20px rgba(99,102,241,.4);
+  }
+  .stage.a .puck { transition: transform .55s var(--ease-out-back); }
+  .stage.b .puck { transition: transform .6s  var(--ease-anticipate); }
+  .stage:hover .puck { transform: translateY(-1.6rem) scale(1.12); }
+
+  /* ---------- Card 3 · steps() ---------- */
+  .stepper {
+    position: relative; width: 100%; max-width: 22rem; height: 3.2rem;
+    background: #0d1117; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  .stepper .fill {
+    position: absolute; inset: 0; width: 12.5%;
+    background: linear-gradient(90deg,#22c55e,#16a34a);
+  }
+  .stepper.end   .fill { transition: width 1.2s steps(8, jump-end); }
+  .stepper.start .fill { transition: width 1.2s steps(8, jump-start); }
+  .stepper:hover .fill,
+  .stepper:focus-within .fill { width: 100%; }
+  .stepper .lbl { position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: .8rem; font-weight: 600; color: #fff; mix-blend-mode: difference; }
+
+  /* typewriter reveal, pure CSS, steps() */
+  .type {
+    font-family: ui-monospace, "SFMono-Regular", monospace; font-size: 1.15rem; font-weight: 700;
+    display: inline-block; width: 0; white-space: nowrap; overflow: hidden;
+    border-right: 2px solid #22d3ee; color: #22d3ee;
+    transition: width 1.3s steps(13, jump-end);
+  }
+  .typebtn:hover .type,
+  .typebtn:focus-within .type { width: 13ch; }
+  .typebtn { background: #0d1117; border: 1px solid var(--line); padding: .8em 1em; }
+
+  /* ---------- Card 4 · Curve gallery (hover-scale) ---------- */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem; width: 100%; }
+  .g {
+    padding: 1em .8em; border-radius: 12px; text-align: center; font-weight: 600; font-size: .9rem;
+    background: #0d1117; color: var(--ink); border: 1px solid var(--line);
+    transition: transform .45s var(--g-ease, linear), border-color .45s var(--g-ease, linear);
+  }
+  .g small { display: block; color: var(--muted); font-weight: 400; font-size: .72rem;
+    font-family: ui-monospace, monospace; margin-top: .25rem; }
+  .g:hover { transform: scale(1.12); border-color: var(--accent); }
+  .g:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+  .g.quart { --g-ease: var(--ease-out-quart); }
+  .g.expo  { --g-ease: var(--ease-out-expo); }
+  .g.circ  { --g-ease: var(--ease-out-circ); }
+  .g.back  { --g-ease: var(--ease-out-back); }
+  .g.soft  { --g-ease: var(--ease-out-back-soft); }
+  .g.cubic { --g-ease: var(--ease-in-out-cubic); }
+
+  /* ---------- Card 5 · linear() multi-bounce ---------- */
+  .dropstage { position: relative; height: 8.5rem; flex: 1 1 100%;
+    background: #0d1117; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .dropstage small { position: absolute; top: .4rem; left: .6rem; color: var(--muted); font-size: .72rem; }
+  .ball {
+    position: absolute; top: .8rem; left: 50%; margin-left: -1.4rem;
+    width: 2.8rem; height: 2.8rem; border-radius: 50%; font-size: 1.4rem; color: #fff;
+    display: grid; place-items: center; background: radial-gradient(circle at 35% 30%,#fca5a5,#dc2626);
+    box-shadow: 0 6px 14px rgba(220,38,38,.45);
+    /* fallback (single overshoot) then modern (true bounce) — old browsers keep the first */
+    transition: transform .9s cubic-bezier(.34,1.56,.64,1);
+    transition: transform .9s var(--bounce);
+  }
+  .dropstage:hover .ball,
+  .dropstage:focus-within .ball { transform: translateY(4.6rem); }
+
+  .hint { color: var(--muted); font-size: .8rem; margin-top: 1rem; }
+  .hint b { color: var(--ink); }
+
+  /* ---------- Accessibility: collapse motion on request ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 08 — Bézier Curves &amp; Custom Easing</h1>
+    <p>Every demo below is driven by a <code>cubic-bezier()</code>, <code>steps()</code>, or
+       <code>linear()</code> token. Hover (or tab into) each to feel the curve. The curve is
+       the <em>character</em> of the motion — same distance, different soul.</p>
+  </header>
+
+  <main>
+    <!-- 1 · Comparison grid -->
+    <section class="card">
+      <h2>1 · Same move, four curves — watch the overshoot</h2>
+      <p class="note">Each runner travels the exact same distance in the exact same time.
+        Only the timing function differs. <code>linear</code> arrives coldly; <code>ease-out</code>
+        decelerates; <code>easeOutBack</code> flies <b>past</b> and springs back; <code>easeOutExpo</code>
+        rushes then glides. Hover a lane (or tab to a runner).</p>
+      <div class="track">
+        <span>linear</span>
+        <div class="lane linear"><button class="runner" type="button">→ go</button></div>
+        <span>ease-out</span>
+        <div class="lane out"><button class="runner" type="button">→ go</button></div>
+        <span>easeOutBack</span>
+        <div class="lane back"><button class="runner" type="button">→ go</button></div>
+        <span>easeOutExpo</span>
+        <div class="lane expo"><button class="runner" type="button">→ go</button></div>
+      </div>
+      <p class="hint"><b>Read it:</b> only the <code>easeOutBack</code> runner ends up briefly
+        <em>right of</em> its target before settling — that's <code>y2 = 1.56</code> pushing progress above 100%.</p>
+    </section>
+
+    <!-- 2 · Overshoot vs anticipation -->
+    <section class="card">
+      <h2>2 · Overshoot (y&gt;1) vs. anticipation (y&lt;0)</h2>
+      <p class="note">Hover each stage. Left uses <code>easeOutBack</code> — it pops up
+        <b>past</b> its target and settles (follow-through). Right uses an
+        <code>anticipate</code> curve — it dips <b>down first</b> (a wind-up) before launching.
+        Both are a single Bézier; the personality is entirely in the Y values.</p>
+      <div class="row">
+        <div class="stage a"><small>easeOutBack · y2 = 1.56 → overshoot</small><div class="puck">🎈</div></div>
+        <div class="stage b"><small>anticipate · y1 = −0.6 → wind-up</small><div class="puck">🚀</div></div>
+      </div>
+    </section>
+
+    <!-- 3 · steps() -->
+    <section class="card">
+      <h2>3 · <code>steps()</code> — stepped, mechanical motion</h2>
+      <p class="note">No smooth interpolation — discrete jumps. Same 8 steps, different jump
+        term: <code>jump-end</code> waits then ticks; <code>jump-start</code> ticks then waits.
+        Hover to fill.</p>
+      <div class="row" style="gap:1.5rem">
+        <div style="flex:1 1 16rem">
+          <div class="stepper end"><div class="fill"></div><div class="lbl">steps(8, jump-end)</div></div>
+        </div>
+        <div style="flex:1 1 16rem">
+          <div class="stepper start"><div class="fill"></div><div class="lbl">steps(8, jump-start)</div></div>
+        </div>
+      </div>
+      <p class="note" style="margin:1.1rem 0 .6rem">And the classic typewriter reveal — pure CSS,
+        one <code>steps(13)</code> on <code>width</code>. Hover the box:</p>
+      <div class="row">
+        <button class="btn typebtn" type="button"><span class="type">Hello, world!</span></button>
+      </div>
+    </section>
+
+    <!-- 4 · Curve gallery -->
+    <section class="card">
+      <h2>4 · Curve gallery — hover to scale, each on a different token</h2>
+      <p class="note">The same <code>scale(1.12)</code> hover, driven by six different easing
+        tokens. Hover each and feel the difference: the <code>back</code> tiles overshoot; the
+        <code>expo</code> tile snaps then glides; the <code>cubic</code> tile is smooth both ways.</p>
+      <div class="gallery">
+        <button class="g quart" type="button">Out Quart<small>.25,1,.5,1</small></button>
+        <button class="g expo"  type="button">Out Expo<small>.16,1,.3,1</small></button>
+        <button class="g circ"  type="button">Out Circ<small>0,.55,.45,1</small></button>
+        <button class="g back"  type="button">Out Back<small>.34,1.56,.64,1</small></button>
+        <button class="g soft"  type="button">Back Soft<small>.22,1.2,.36,1</small></button>
+        <button class="g cubic" type="button">InOut Cubic<small>.65,0,.35,1</small></button>
+      </div>
+    </section>
+
+    <!-- 5 · linear() bounce -->
+    <section class="card">
+      <h2>5 · <code>linear()</code> — a true multi-bounce</h2>
+      <p class="note">A single <code>cubic-bezier()</code> can cross its target only once, so it
+        can't really <em>bounce</em>. The modern <code>linear()</code> function traces any shape
+        from a list of progress stops. Hover to drop the ball — it bounces, then settles. (Falls
+        back to a single overshoot on browsers without <code>linear()</code>.)</p>
+      <div class="row">
+        <div class="dropstage" tabindex="0"><small>linear( … ) · damped bounce</small><div class="ball">🏀</div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source to read every curve — the lesson styles live in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. All motion collapses under
+    <code>prefers-reduced-motion: reduce</code>. Edit a token, save, refresh.
+  </footer>
+</body>
+</html>
