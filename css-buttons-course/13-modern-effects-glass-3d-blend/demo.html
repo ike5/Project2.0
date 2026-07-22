@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 13 — Modern Effects: Glass, 3D & Blend · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — modern effects
+     ========================================================= */
+
+  /* A colorful/busy panel: glass and blend modes NEED this behind them to
+     show their effect. Over a flat color, glass blur reveals nothing. */
+  .vivid {
+    background:
+      radial-gradient(circle at 15% 20%, #f43f5e 0, transparent 45%),
+      radial-gradient(circle at 85% 25%, #f59e0b 0, transparent 45%),
+      radial-gradient(circle at 30% 90%, #22d3ee 0, transparent 45%),
+      radial-gradient(circle at 80% 85%, #a855f7 0, transparent 45%),
+      linear-gradient(135deg, #312e81, #0e7490);
+    border-radius: 12px;
+    padding: 1.75rem;
+  }
+  .vivid .row { gap: 1.1rem; }
+
+  /* base reset shared by all lesson buttons */
+  .m13 {
+    appearance: none; border: none; font: inherit; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    font-weight: 600; line-height: 1.2; cursor: pointer;
+    touch-action: manipulation; user-select: none;
+  }
+  .m13:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+  /* ---- 1 · GLASSMORPHISM -------------------------------------------------
+     Fallback first (opaque, legible with no blur), then upgrade where
+     backdrop-filter is supported. */
+  .glass {
+    background: rgba(20, 20, 35, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 14px;
+    padding: .8em 1.5em;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 8px 24px rgba(0,0,0,.3);
+    transition: background-color .2s ease, box-shadow .2s ease;
+  }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: rgba(255, 255, 255, 0.12);
+      -webkit-backdrop-filter: blur(12px) saturate(160%);
+              backdrop-filter: blur(12px) saturate(160%);
+    }
+  }
+  .glass:hover {
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 10px 30px rgba(0,0,0,.4);
+  }
+  /* a darker-tinted glass variant */
+  .glass--dark { }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass--dark {
+      background: rgba(10, 10, 20, 0.28);
+      border-color: rgba(255,255,255,.18);
+    }
+    .glass--dark:hover { background: rgba(10, 10, 20, 0.4); }
+  }
+
+  /* ---- 2 · 3D TILT ON HOVER ---------------------------------------------- */
+  .stage { perspective: 600px; display: inline-block; }
+  .tilt {
+    position: relative;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    border-radius: 16px; padding: 1.1em 1.8em; font-size: 1.05rem;
+    transform-style: preserve-3d;
+    box-shadow: 0 10px 25px rgba(80, 40, 160, .45);
+    transition: transform .25s ease, box-shadow .25s ease;
+    will-change: transform;
+  }
+  .tilt .label { display: inline-block; transform: translateZ(30px); }
+  .tilt .sub {
+    display: block; font-size: .72rem; font-weight: 500; opacity: .8;
+    transform: translateZ(16px);
+  }
+  .stage:hover .tilt {
+    transform: rotateX(12deg) rotateY(-14deg);
+    box-shadow: 24px 24px 40px rgba(0, 0, 0, .5);
+  }
+
+  /* ---- 3 · PHYSICAL PUSH BUTTON ------------------------------------------ */
+  .push {
+    background: #6366f1; border-radius: 12px; padding: .85em 1.7em; font-size: 1.05rem;
+    box-shadow: 0 6px 0 #3730a3, 0 8px 16px rgba(0,0,0,.35);
+    transform: translateY(0);
+    transition: transform .06s ease, box-shadow .06s ease;
+  }
+  .push:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 0 #3730a3, 0 12px 20px rgba(0,0,0,.4);
+  }
+  .push:active {
+    transform: translateY(6px);
+    box-shadow: 0 1px 0 #3730a3, 0 2px 6px rgba(0,0,0,.4);
+  }
+  /* a warm "arcade" variant to show the pattern re-skins trivially */
+  .push--arcade { background: #f43f5e; box-shadow: 0 6px 0 #9f1239, 0 8px 16px rgba(0,0,0,.35); }
+  .push--arcade:hover  { box-shadow: 0 8px 0 #9f1239, 0 12px 20px rgba(0,0,0,.4); }
+  .push--arcade:active { box-shadow: 0 1px 0 #9f1239, 0 2px 6px rgba(0,0,0,.4); }
+
+  /* ---- 4 · MIX-BLEND-MODE ------------------------------------------------ */
+  .blend-wrap { isolation: isolate; }   /* contain the blend to this panel */
+  .blend {
+    background: rgba(255,255,255,.9);
+    border-radius: 12px; padding: .85em 1.7em; font-size: 1.05rem;
+  }
+  .blend .blend-label {
+    mix-blend-mode: difference;   /* renders as the inverse of the backdrop */
+    color: #fff;
+  }
+  /* a fully-transparent button whose TEXT alone blends over the imagery */
+  .blend-text {
+    background: transparent; font-size: 1.6rem; font-weight: 800; letter-spacing: .02em;
+    padding: .4em .6em;
+    color: #fff; mix-blend-mode: difference;
+  }
+
+  /* ---- 5 · MASK / REVEAL ------------------------------------------------- */
+  .masked {
+    background: linear-gradient(135deg, #06b6d4, #3b82f6);
+    border-radius: 12px; padding: .85em 1.8em; font-size: 1.05rem;
+    -webkit-mask-image: linear-gradient(to right, #000 68%, transparent);
+            mask-image: linear-gradient(to right, #000 68%, transparent);
+  }
+  .reveal {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #10b981, #059669);
+    border-radius: 12px; padding: .85em 1.8em; font-size: 1.05rem;
+  }
+  .reveal > span { position: relative; z-index: 1; }
+  .reveal::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,.55), transparent 70%);
+    transform: translateX(-120%);
+    transition: transform .5s ease;
+  }
+  .reveal:hover::after { transform: translateX(120%); }
+
+  /* ---- 6 · FILTER PUNCH ON HOVER ----------------------------------------- */
+  .punch {
+    background: linear-gradient(135deg, #ec4899, #f59e0b);
+    border-radius: 12px; padding: .85em 1.8em; font-size: 1.05rem;
+    transition: filter .15s ease, transform .15s ease;
+  }
+  .punch:hover  { filter: brightness(1.12) saturate(1.2) drop-shadow(0 0 10px rgba(236,72,153,.6)); transform: translateY(-1px); }
+  .punch:active { filter: brightness(.95); transform: translateY(0); }
+
+  /* ---- reduced motion: keep the looks, drop the movement ---------------- */
+  @media (prefers-reduced-motion: reduce) {
+    .glass, .tilt, .push, .punch { transition: none; }
+    .reveal::after { transition: none; }
+    .stage:hover .tilt { transform: none; }
+    .push:hover  { transform: none; }
+    .push:active { transform: translateY(3px); }
+    .punch:hover, .punch:active { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 13 — Modern Effects: Glass, 3D &amp; Blend Modes</h1>
+    <p>Frosted glass, real 3D tilt, a push button that depresses like a key, blend-mode
+       labels, gradient masks, and <code>filter</code> punch. Hover, press, and tab through.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Glassmorphism — <code>backdrop-filter</code></h2>
+      <p class="note">Frosted glass blurs and saturates the pixels <em>behind</em> it — so it
+         only shows over a busy backdrop. That's why these sit on a vivid gradient panel.
+         Includes the <code>-webkit-</code> prefix and an <code>@supports</code> fallback.</p>
+      <div class="vivid">
+        <div class="row">
+          <button class="m13 glass" type="button">🧊 Frosted glass</button>
+          <button class="m13 glass glass--dark" type="button">Smoked glass</button>
+          <button class="m13 glass" type="button">Get the pass →</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · 3D tilt on hover — <code>perspective</code> + <code>rotateX/Y</code></h2>
+      <p class="note">The parent <code>.stage</code> sets <code>perspective</code>; the button
+         tilts with <code>rotateX/rotateY</code>, and its label floats forward via
+         <code>translateZ</code> inside a <code>preserve-3d</code> face. Hover it.</p>
+      <div class="row">
+        <span class="stage">
+          <button class="m13 tilt" type="button">
+            <span class="label">Tilt me<span class="sub">pure-CSS 3D · no JS</span></span>
+          </button>
+        </span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Physical push button — depresses on press</h2>
+      <p class="note">A hard, un-blurred <code>box-shadow</code> is the solid side wall. On
+         <code>:active</code> the face drops by exactly the edge height and the edge shrinks
+         in lockstep — it collapses onto the ground, then springs back. <strong>Press and
+         hold.</strong></p>
+      <div class="row">
+        <button class="m13 push" type="button">Press me</button>
+        <button class="m13 push push--arcade" type="button">⬤ Insert coin</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · <code>mix-blend-mode: difference</code> over imagery</h2>
+      <p class="note">The label renders as the <em>inverse</em> of whatever's behind it, so it
+         stays legible over any color — no hand-picked text color. The panel is wrapped in
+         <code>isolation: isolate</code> so the blend is contained here.</p>
+      <div class="vivid blend-wrap">
+        <div class="row">
+          <button class="m13 blend" type="button"><span class="blend-label">DIFFERENCE</span></button>
+          <button class="m13 blend-text" type="button">INVERT ↔</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Masking &amp; reveal — <code>mask-image</code> &amp; sheen sweep</h2>
+      <p class="note">Left: a gradient <code>mask-image</code> fades the button's right edge to
+         transparent. Right: a masked highlight sweeps across on hover (a <code>clip-path</code>
+         alternative for feathered edges). Hover the second.</p>
+      <div class="row">
+        <button class="m13 masked" type="button">Faded edge →</button>
+        <button class="m13 reveal" type="button"><span>Hover to shine ✨</span></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · <code>filter</code> punch on hover</h2>
+      <p class="note">One line for an instant hover pop: <code>brightness</code> +
+         <code>saturate</code>, plus a shape-accurate <code>drop-shadow</code> glow. Supported
+         everywhere; cheap on the compositor.</p>
+      <div class="row">
+        <button class="m13 punch" type="button">Brighten me ⚡</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh. Some effects
+    (<code>backdrop-filter</code>, <code>mask-image</code>) may need a very recent browser.
+  </footer>
+</body>
+</html>
