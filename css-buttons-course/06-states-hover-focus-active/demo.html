@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Module 06 — States: Hover, Focus, Active & Disabled · CSS Buttons Course</title>
+<style>
+  /* ---- demo page shell (shared look across all module demos) ---- */
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #4f46e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header { max-width: 900px; margin: 0 auto 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  header p { color: var(--muted); margin: 0; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .card .note { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  code { background: #0d1117; border: 1px solid var(--line); border-radius: 6px;
+         padding: .1rem .4rem; font-size: .85em; }
+  footer { max-width: 900px; margin: 2.5rem auto 0; color: var(--muted); font-size: .85rem; }
+
+  /* =========================================================
+     THE ACTUAL LESSON CSS — interactive states, done right
+     ========================================================= */
+
+  /* --- Baseline button all cards build on --- */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5em; padding: .65em 1.25em; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    /* transition specific props: color/shadow leisurely, press near-instant */
+    transition: background-color .18s ease, box-shadow .18s ease, transform .06s ease;
+  }
+
+  /* 1 · SOURCE ORDER: normal → hover → focus-visible → active → disabled.
+     Same specificity, so the later rule wins ties. :active after :hover means
+     the pressed look wins while you hold; :disabled last kills everything. */
+  @media (hover: hover) and (pointer: fine) {         /* gate hover — see card 2 */
+    .btn:hover { background: #4338ca; }
+  }
+  .btn:focus-visible {                                /* keyboard ring only */
+    outline: 2px solid #818cf8; outline-offset: 3px;
+  }
+  .btn:active {                                       /* pressed feedback */
+    transform: translateY(1px) scale(.98);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,.3);
+    background: #3730a3;
+  }
+  .btn:disabled, .btn[disabled] {
+    opacity: .5; cursor: not-allowed; pointer-events: none;
+  }
+
+  /* 2 · Ungated hover, to demonstrate the touch bug by contrast */
+  .btn--sticky:hover { background: #db2777; }          /* no @media gate → sticks on touch */
+
+  /* 4 · A custom double focus ring that survives forced-colors mode */
+  .btn--ring:focus-visible {
+    box-shadow: 0 0 0 3px var(--panel), 0 0 0 6px #22d3ee;  /* ring floats over panel */
+    outline: 2px solid transparent;                        /* invisible normally… */
+    outline-offset: 2px;
+  }
+  @media (forced-colors: active) {
+    .btn--ring:focus-visible { outline-color: Highlight; } /* …becomes the ring */
+  }
+
+  /* 5 · aria-disabled: stays focusable, click NOT blocked (no pointer-events:none) */
+  .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+  /* 6a · Toggle — the aria-pressed attribute drives BOTH look and semantics */
+  .toggle[aria-pressed="true"] {
+    background: #16a34a;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,.35);     /* sunken = "on" */
+  }
+  .toggle[aria-pressed="true"] .dot { background: #bbf7d0; }
+  .toggle .dot {
+    width: .6em; height: .6em; border-radius: 50%;
+    background: #64748b; transition: background-color .18s ease;
+  }
+
+  /* 6b · Busy / loading — CSS-only spinner, dimmed label, blocked re-click */
+  .btn[aria-busy="true"] { cursor: progress; pointer-events: none; }
+  .btn[aria-busy="true"] .label { opacity: .6; }
+  .btn .spinner { display: none; }
+  .btn[aria-busy="true"] .spinner {
+    display: inline-block; width: 1em; height: 1em;
+    border: 2px solid currentColor; border-top-color: transparent;
+    border-radius: 50%; animation: btn-spin .7s linear infinite;
+  }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+  /* Motion guard — required across the course */
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition-duration: .01ms; }
+    .btn[aria-busy="true"] .spinner { animation-duration: 2.4s; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Module 06 — States: Hover, Focus, Active &amp; Disabled</h1>
+    <p>Every interactive state, in the right source order. <strong>Tab with your keyboard</strong>
+       to see <code>:focus-visible</code>; press and hold to feel <code>:active</code>.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · The full state matrix on one button</h2>
+      <p class="note">Hover it, press &amp; hold it, tab to it, and compare with the disabled
+         copy. One button, five states — resolved by source order:
+         <code>normal → :hover → :focus-visible → :active → :disabled</code>.</p>
+      <div class="row">
+        <button class="btn" type="button">Hover · press · tab me</button>
+        <button class="btn" type="button">Second (tab between)</button>
+        <button class="btn" type="button" disabled>Disabled</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · The touch problem: gate <code>:hover</code></h2>
+      <p class="note">Left is gated with <code>@media (hover: hover) and (pointer: fine)</code> —
+         on a mouse it hovers, on a phone it simply doesn't (so it never sticks after a tap).
+         Right is <em>un</em>gated: on a touchscreen its pink hover will stick until you tap
+         elsewhere. On a desktop they look the same — the difference shows on touch.</p>
+      <div class="row">
+        <button class="btn" type="button">Gated hover (correct)</button>
+        <button class="btn btn--sticky" type="button">Ungated hover (sticks on touch)</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · <code>:active</code> — instant pressed feedback</h2>
+      <p class="note">Press and <em>hold</em>: the button nudges down 1px, scales to .98, and
+         gets an inset shadow so it reads as pushed in. Small + fast = physical. This fires on
+         touch too, which is why touch devices still feel responsive.</p>
+      <div class="row">
+        <button class="btn" type="button">Press &amp; hold me 👇</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · <code>:focus-visible</code> ring (forced-colors safe)</h2>
+      <p class="note">Tab to these — the ring appears. <em>Click</em> them — it doesn't
+         (that's <code>:focus-visible</code>). The right button uses a custom double ring built
+         from <code>box-shadow</code> with a transparent <code>outline</code> fallback, so a
+         real ring still shows in Windows High Contrast / forced-colors mode.</p>
+      <div class="row">
+        <button class="btn" type="button">Standard outline ring</button>
+        <button class="btn btn--ring" type="button">Custom double ring</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · <code>disabled</code> vs <code>aria-disabled="true"</code></h2>
+      <p class="note">Try to <strong>tab</strong> to each. The real <code>disabled</code> button
+         is skipped entirely (out of tab order, click blocked). The
+         <code>aria-disabled</code> one still receives focus — so a keyboard user can reach it and
+         read <em>why</em> — but note its click is <em>not</em> blocked by the browser (you'd
+         block the action in code). Discoverability vs. hard-block: that's the tradeoff.</p>
+      <div class="row">
+        <button class="btn" type="button" disabled>disabled (unfocusable)</button>
+        <button class="btn" type="button" aria-disabled="true"
+                title="Fill in all fields to enable">aria-disabled (focusable)</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Toggle button — <code>[aria-pressed]</code></h2>
+      <p class="note">The <code>aria-pressed</code> attribute drives both the look and what a
+         screen reader announces, so they can never disagree. Click to toggle on/off — on looks
+         "sunken" and green. (One line of JS flips the value in production; the CSS keys entirely
+         off the attribute.)</p>
+      <div class="row">
+        <button class="btn toggle" type="button" aria-pressed="true">
+          <span class="dot" aria-hidden="true"></span> Notifications
+        </button>
+        <button class="btn toggle" type="button" aria-pressed="false">
+          <span class="dot" aria-hidden="true"></span> Auto-save
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7 · Loading button — <code>[aria-busy]</code></h2>
+      <p class="note">A CSS-only spinner (a rotating ring with one transparent edge), a dimmed
+         label, <code>cursor: progress</code>, and <code>pointer-events: none</code> to stop
+         double-submits. <code>aria-busy="true"</code> tells assistive tech the button is
+         working. Reduced-motion slows the spin instead of freezing it.</p>
+      <div class="row">
+        <button class="btn" type="button" aria-busy="true">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="label">Saving…</span>
+        </button>
+        <button class="btn" type="button">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="label">Idle (not busy)</span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    View source on this file to read the CSS — the lesson styles are in the block marked
+    <code>THE ACTUAL LESSON CSS</code>. Edit, save, refresh.
+  </footer>
+</body>
+</html>

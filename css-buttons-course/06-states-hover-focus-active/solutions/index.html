@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solution 06 — Every interactive state</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 1.75rem;
+    padding: 2rem; background: #0e1116; color: #e6edf3;
+    font-family: system-ui, sans-serif;
+  }
+  .row { display: flex; gap: 1rem; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .row + .row { margin-top: -.5rem; }
+  .caption { color: #8b949e; font-size: .8rem; text-align: center; margin: 0; }
+
+  /* ---------- Base button ---------- */
+  .btn {
+    appearance: none; border: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+    padding: .65em 1.25em; border-radius: 10px;
+    background: #6d28d9; color: #fff; font-weight: 600; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: background-color .18s ease, box-shadow .18s ease, transform .06s ease;
+  }
+
+  /* States in LVHA-style order: normal → hover → focus-visible → active → disabled.
+     :active comes AFTER :hover so the pressed look wins while held (you're hovering
+     AND pressing at once, same specificity, later rule wins). :disabled is last so
+     the dead look overrides everything above it. */
+
+  /* Gate hover so it can't stick on touchscreens. Only :hover is gated. */
+  @media (hover: hover) and (pointer: fine) {
+    .btn:hover { background: #7c3aed; }
+  }
+  .btn:focus-visible {                       /* keyboard-only ring */
+    outline: 2px solid #a78bfa; outline-offset: 3px;
+  }
+  .btn:active {                              /* instant pressed feedback */
+    transform: translateY(1px) scale(.98);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,.35);
+    background: #5b21b6;
+  }
+  .btn:disabled, .btn[disabled] {            /* real disabled: dead + non-clickable */
+    opacity: .5; cursor: not-allowed; pointer-events: none;
+  }
+
+  /* aria-disabled: stays focusable so a keyboard user can reach it and read the title.
+     Deliberately NO pointer-events:none — that would defeat keeping it reachable. */
+  .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+  /* ---------- Toggle variant: styling driven entirely by aria-pressed ---------- */
+  .toggle[aria-pressed="true"] {
+    background: #16a34a;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,.35);   /* "sunken / on" */
+  }
+  .toggle .dot {
+    width: .6em; height: .6em; border-radius: 50%; background: #94a3b8;
+    transition: background-color .18s ease;
+  }
+  .toggle[aria-pressed="true"] .dot { background: #bbf7d0; }
+
+  /* ---------- Stretch: custom double focus ring, forced-colors safe ---------- */
+  .btn--ring:focus-visible {
+    box-shadow: 0 0 0 3px #0e1116, 0 0 0 6px #22d3ee;
+    outline: 2px solid transparent; outline-offset: 2px;
+  }
+  @media (forced-colors: active) {
+    .btn--ring:focus-visible { outline-color: Highlight; }
+  }
+
+  /* ---------- Stretch: aria-busy loading, CSS-only spinner ---------- */
+  .btn[aria-busy="true"] { cursor: progress; pointer-events: none; }
+  .btn[aria-busy="true"] .label { opacity: .6; }
+  .btn .spinner { display: none; }
+  .btn[aria-busy="true"] .spinner {
+    display: inline-block; width: 1em; height: 1em;
+    border: 2px solid currentColor; border-top-color: transparent;
+    border-radius: 50%; animation: btn-spin .7s linear infinite;
+  }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+  /* Motion guard */
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition-duration: .01ms; }
+    .btn[aria-busy="true"] .spinner { animation-duration: 2.4s; }
+  }
+</style>
+</head>
+<body>
+  <!-- Core: hover (gated) + active + focus-visible + disabled -->
+  <div class="row">
+    <button class="btn" type="button">
+      <span aria-hidden="true">➕</span> Follow
+    </button>
+    <button class="btn" type="button" disabled>Follow</button>
+  </div>
+  <p class="caption">Tab for the ring · press &amp; hold for the pressed look · the right copy is disabled</p>
+
+  <!-- aria-pressed toggle variant (look driven by the attribute) -->
+  <div class="row">
+    <button class="btn toggle" type="button" aria-pressed="true">
+      <span class="dot" aria-hidden="true"></span> Notifications
+    </button>
+    <button class="btn toggle" type="button" aria-pressed="false">
+      <span class="dot" aria-hidden="true"></span> Auto-save
+    </button>
+  </div>
+  <p class="caption">aria-pressed drives the "on" look — edit the attribute in DevTools to see it restyle</p>
+
+  <!-- Stretch row: custom ring · aria-disabled · aria-busy loading -->
+  <div class="row">
+    <button class="btn btn--ring" type="button">Custom ring</button>
+    <button class="btn" type="button" aria-disabled="true"
+            title="Complete your profile to enable">aria-disabled (focusable)</button>
+    <button class="btn" type="button" aria-busy="true">
+      <span class="spinner" aria-hidden="true"></span>
+      <span class="label">Saving…</span>
+    </button>
+  </div>
+  <p class="caption">Stretch goals: forced-colors-safe ring · focusable aria-disabled · CSS-only spinner</p>
+</body>
+</html>
