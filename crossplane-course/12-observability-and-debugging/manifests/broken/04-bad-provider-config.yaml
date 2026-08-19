@@ -1,0 +1,96 @@
+# BROKEN STACK 4 — diagnose before reading solutions/.
+#
+# Symptom: the XR renders correctly and the composed resources all exist as
+# Kubernetes objects. Every one of them is SYNCED=False. The composition is
+# fine; something below it is not.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrokenfours.debug.acme.io
+spec:
+  scope: Namespaced
+  group: debug.acme.io
+  names:
+    kind: XBrokenFour
+    plural: xbrokenfours
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                region:
+                  type: string
+                  default: us-east-1
+---
+# A ProviderConfig pointing at an endpoint that does not exist.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: broken-endpoint
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds
+      key: creds
+  endpoint:
+    hostnameImmutable: true
+    url:
+      type: Static
+      static: http://moto.wrong-namespace.svc.cluster.local:5000
+  skip_credentials_validation: true
+  skip_metadata_api_check: true
+  skip_requesting_account_id: true
+  skip_region_validation: true
+  s3_use_path_style: true
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrokenfour-aws
+spec:
+  compositeTypeRef:
+    apiVersion: debug.acme.io/v1alpha1
+    kind: XBrokenFour
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: broken-four-{{ $xr.metadata.name }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region }}
+              providerConfigRef:
+                name: broken-endpoint
+    - step: ready
+      functionRef:
+        name: function-auto-ready
+---
+apiVersion: debug.acme.io/v1alpha1
+kind: XBrokenFour
+metadata:
+  name: stack-four
+  namespace: debug
+spec:
+  region: us-east-1

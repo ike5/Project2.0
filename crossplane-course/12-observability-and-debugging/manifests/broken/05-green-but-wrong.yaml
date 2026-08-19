@@ -1,0 +1,106 @@
+# BROKEN STACK 5 — the hardest one. Diagnose before reading solutions/.
+#
+# Symptom: EVERYTHING IS GREEN. The XR is Ready, every composed resource is
+# Synced and Ready, `crossplane trace` is entirely healthy.
+#
+# And the system does not work: the application cannot reach the bucket it was
+# given, and the "private" bucket is readable by anyone.
+#
+# There is nothing wrong with Crossplane here. That is the lesson.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrokenfives.debug.acme.io
+spec:
+  scope: Namespaced
+  group: debug.acme.io
+  names:
+    kind: XBrokenFive
+    plural: xbrokenfives
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                private:
+                  type: boolean
+                  default: true
+            status:
+              type: object
+              properties:
+                bucketName:
+                  type: string
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrokenfive-aws
+spec:
+  compositeTypeRef:
+    apiVersion: debug.acme.io/v1alpha1
+    kind: XBrokenFive
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $bucket := printf "broken-five-%s" $xr.metadata.name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: us-east-1
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "pab" }}
+            spec:
+              forProvider:
+                region: us-east-1
+                # Look carefully at this line, and at what the XR asked for.
+                bucket: broken-five-wrong-name
+                blockPublicAcls: {{ $xr.spec.private }}
+                blockPublicPolicy: {{ $xr.spec.private }}
+                ignorePublicAcls: {{ $xr.spec.private }}
+                restrictPublicBuckets: {{ $xr.spec.private }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: debug.acme.io/v1alpha1
+            kind: XBrokenFive
+            status:
+              # ...and at what the application is told to use.
+              bucketName: broken-five-{{ $xr.metadata.name }}-data
+    - step: ready
+      functionRef:
+        name: function-auto-ready
+---
+apiVersion: debug.acme.io/v1alpha1
+kind: XBrokenFive
+metadata:
+  name: stack-five
+  namespace: debug
+spec:
+  private: true

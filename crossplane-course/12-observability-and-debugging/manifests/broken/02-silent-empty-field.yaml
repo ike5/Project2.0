@@ -1,0 +1,78 @@
+# BROKEN STACK 2 — diagnose before reading solutions/.
+#
+# Symptom: the stack goes fully Ready. Everything is green. But the bucket has
+# no environment tag, and nobody can work out why. No error appears anywhere.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrokentwos.debug.acme.io
+spec:
+  scope: Namespaced
+  group: debug.acme.io
+  names:
+    kind: XBrokenTwo
+    plural: xbrokentwos
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                environment:
+                  type: string
+                  default: dev
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrokentwo-aws
+spec:
+  compositeTypeRef:
+    apiVersion: debug.acme.io/v1alpha1
+    kind: XBrokenTwo
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: bucket
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: Bucket
+              spec:
+                forProvider:
+                  region: us-east-1
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "broken-two-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.environment
+                toFieldPath: spec.forProvider.tags.environment
+    - step: ready
+      functionRef:
+        name: function-auto-ready
+---
+apiVersion: debug.acme.io/v1alpha1
+kind: XBrokenTwo
+metadata:
+  name: stack-two
+  namespace: debug
+spec:
+  environment: staging

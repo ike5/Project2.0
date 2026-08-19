@@ -1,0 +1,47 @@
+# Helm values for kube-prometheus-stack, configured to scrape Crossplane.
+#
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f prometheus-values.yaml
+#
+# Sized for a kind cluster -- shrink retention further if your laptop struggles.
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+    # Pick up PrometheusRules and ServiceMonitors from ANY namespace, not just
+    # those carrying the release label. Convenient for a lab; be more selective
+    # in production.
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+grafana:
+  adminPassword: admin
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# kind's control plane components are not reachable the way the chart expects,
+# so disable the alerts that would fire constantly and teach you to ignore them.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi

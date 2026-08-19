@@ -1,0 +1,36 @@
+# Tell Prometheus to scrape Crossplane and its providers.
+#
+# Crossplane core and every provider pod expose metrics on :8080/metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: crossplane
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+# Providers each get their own Service; a single PodMonitor covers them all.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: crossplane-providers
+  namespace: crossplane-system
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchExpressions:
+      - key: pkg.crossplane.io/provider
+        operator: Exists
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

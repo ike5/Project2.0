@@ -1,0 +1,109 @@
+# Challenge 12 Task 1 — a SIXTH broken stack, with a root cause none of the
+# other five point at.
+#
+# SYMPTOM CARD (give a colleague only this):
+#
+#   "A composition that worked yesterday now fails for new XRs. Existing XRs
+#    are fine. The XR reports an error mentioning a kind you're certain exists,
+#    the provider is Healthy, and a colleague insists they used that resource
+#    type last week."
+#
+# It is a good sixth case because the evidence lives somewhere none of the other
+# five send you -- `kubectl get managedresourcedefinitions` -- and because "it
+# worked last week" sends people hunting through composition history instead.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrokensixes.debug.acme.io
+spec:
+  scope: Namespaced
+  group: debug.acme.io
+  names:
+    kind: XBrokenSix
+    plural: xbrokensixes
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                region:
+                  type: string
+                  default: us-east-1
+---
+# THE FAULT: this policy activates only Buckets. The composition below also
+# needs BucketVersioning, whose CRD is therefore removed from the cluster --
+# even though the S3 provider is installed and perfectly Healthy.
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: course-resources
+spec:
+  activate:
+    - buckets.s3.aws.upbound.io
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrokensix-aws
+spec:
+  compositeTypeRef:
+    apiVersion: debug.acme.io/v1alpha1
+    kind: XBrokenSix
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $bucket := printf "broken-six-%s" $xr.metadata.name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region }}
+              providerConfigRef:
+                name: default
+            ---
+            # This kind is INSTALLED but not ACTIVATED, so its CRD does not
+            # exist and this resource cannot be applied.
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketVersioning
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "versioning" }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region }}
+                bucket: {{ $bucket }}
+                versioningConfiguration:
+                  status: Enabled
+              providerConfigRef:
+                name: default
+    - step: ready
+      functionRef:
+        name: function-auto-ready
+---
+apiVersion: debug.acme.io/v1alpha1
+kind: XBrokenSix
+metadata:
+  name: stack-six
+  namespace: debug
+spec:
+  region: us-east-1

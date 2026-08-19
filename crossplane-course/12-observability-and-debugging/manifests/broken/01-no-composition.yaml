@@ -1,0 +1,72 @@
+# BROKEN STACK 1 — diagnose before reading solutions/.
+#
+# Symptom: the XR is created and then simply sits there. No composed resources
+# appear, and `kubectl get` shows nothing obviously wrong.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrokenones.debug.acme.io
+spec:
+  scope: Namespaced
+  group: debug.acme.io
+  names:
+    kind: XBrokenOne
+    plural: xbrokenones
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                region:
+                  type: string
+                  default: us-east-1
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrokenone-aws
+spec:
+  compositeTypeRef:
+    apiVersion: debug.acme.io/v1beta1
+    kind: XBrokenOne
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: broken-one-{{ $xr.metadata.name }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region }}
+              providerConfigRef:
+                name: default
+    - step: ready
+      functionRef:
+        name: function-auto-ready
+---
+apiVersion: debug.acme.io/v1alpha1
+kind: XBrokenOne
+metadata:
+  name: stack-one
+  namespace: debug
+spec:
+  region: us-east-1

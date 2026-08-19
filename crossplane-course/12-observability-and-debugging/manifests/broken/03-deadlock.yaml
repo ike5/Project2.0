@@ -1,0 +1,87 @@
+# BROKEN STACK 3 — diagnose before reading solutions/.
+#
+# Symptom: the XR reports an error and NOTHING is created -- not even the
+# resources that have no dependencies. The stack can never make progress on its
+# own, no matter how long you wait.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrokenthrees.debug.acme.io
+spec:
+  scope: Namespaced
+  group: debug.acme.io
+  names:
+    kind: XBrokenThree
+    plural: xbrokenthrees
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                region:
+                  type: string
+                  default: us-east-1
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrokenthree-aws
+spec:
+  compositeTypeRef:
+    apiVersion: debug.acme.io/v1alpha1
+    kind: XBrokenThree
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "primary" }}
+                crossplane.io/external-name: broken-three-{{ $xr.metadata.name }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketVersioning
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "versioning" }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region }}
+                bucket: {{ (index .observed.resources "primary").resource.status.atProvider.id }}
+                versioningConfiguration:
+                  status: Enabled
+              providerConfigRef:
+                name: default
+    - step: ready
+      functionRef:
+        name: function-auto-ready
+---
+apiVersion: debug.acme.io/v1alpha1
+kind: XBrokenThree
+metadata:
+  name: stack-three
+  namespace: debug
+spec:
+  region: us-east-1
