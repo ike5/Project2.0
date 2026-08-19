@@ -1,0 +1,71 @@
+# Revision 2 — a SAFE change.
+#
+# Adds a public access block and changes a tag. The bucket's resource name
+# annotation is UNCHANGED, so existing buckets are updated in place rather than
+# recreated. This is what a good composition change looks like.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbucket-rev
+  labels:
+    version: v2
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XBucket
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $bucket := printf "%s-%s" $xr.metadata.namespace $xr.metadata.name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                # SAME NAME as v1 -- this is why the bucket survives the upgrade.
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: us-east-1
+                tags:
+                  environment: {{ $xr.spec.environment }}
+                  revision: "v2"
+                  managed-by: crossplane
+              providerConfigRef:
+                name: default
+            ---
+            # A NEW resource. Adding one is safe: existing resources are
+            # untouched, and the new one is simply created.
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-access-block" }}
+            spec:
+              forProvider:
+                region: us-east-1
+                bucket: {{ $bucket }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XBucket
+            status:
+              bucketName: {{ $bucket }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

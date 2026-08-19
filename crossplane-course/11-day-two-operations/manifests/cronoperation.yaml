@@ -1,0 +1,78 @@
+# Scheduled work that runs INSIDE the control plane.
+#
+# ⚠️ ALPHA. Operations must be enabled with --enable-operations on the
+# Crossplane deployment, and the API may change between releases. Know these
+# exist and what they are for; do not build your backup strategy on them yet.
+# For production scheduled work today, see cronjob-alternative.yaml.
+apiVersion: ops.crossplane.io/v1alpha1
+kind: CronOperation
+metadata:
+  name: nightly-bucket-audit
+spec:
+  # Standard cron syntax, same as a Kubernetes CronJob.
+  schedule: "0 2 * * *"
+  # Allow  -> runs may overlap (default)
+  # Forbid -> skip this run if the previous is still going
+  # Replace-> kill the previous run and start a new one
+  #
+  # Forbid is right for anything that mutates state: two concurrent audits
+  # writing the same report is a race.
+  concurrencyPolicy: Forbid
+  # Keep a few for debugging; unbounded history fills etcd.
+  successfulHistoryLimit: 3
+  failedHistoryLimit: 3
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+        - step: audit
+          functionRef:
+            name: function-go-templating
+          input:
+            apiVersion: gotemplating.fn.crossplane.io/v1beta1
+            kind: GoTemplate
+            source: Inline
+            inline:
+              template: |
+                {{/*
+                  An Operation's pipeline produces resources, just like a
+                  Composition -- but it runs ONCE and reports a result rather
+                  than maintaining state forever.
+
+                  Here we write an audit record. A real one might create an RDS
+                  snapshot, rotate a key, or tag untagged resources.
+                */}}
+                ---
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: bucket-audit-report
+                  namespace: crossplane-system
+                data:
+                  note: "Nightly audit ran. Replace this step with real work."
+---
+# A one-shot Operation: the equivalent of a Job.
+apiVersion: ops.crossplane.io/v1alpha1
+kind: Operation
+metadata:
+  name: one-off-audit
+spec:
+  mode: Pipeline
+  pipeline:
+    - step: audit
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            ---
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: one-off-audit-report
+              namespace: crossplane-system
+            data:
+              note: "Ran once, to completion."

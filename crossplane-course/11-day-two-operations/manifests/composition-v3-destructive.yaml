@@ -1,0 +1,59 @@
+# Revision 3 — a DESTRUCTIVE change that looks harmless.
+#
+# The only difference from v2 is the resource NAME annotation:
+#     "bucket"  ->  "s3-bucket"
+#
+# No API field changed. The XR is byte-for-byte identical. And moving an XR to
+# this revision DELETES the existing bucket and creates a new one.
+#
+# This exists so you can watch it happen on a canary, which is exactly how you
+# should discover it in real life.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbucket-rev
+  labels:
+    version: v3
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XBucket
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $bucket := printf "%s-%s" $xr.metadata.namespace $xr.metadata.name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                # THE ONLY CHANGE. Crossplane identifies composed resources by
+                # this name, so it sees "bucket" as removed and "s3-bucket" as
+                # new -- a delete and a create.
+                {{ setResourceNameAnnotation "s3-bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: us-east-1
+                tags:
+                  environment: {{ $xr.spec.environment }}
+                  revision: "v3"
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XBucket
+            status:
+              bucketName: {{ $bucket }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

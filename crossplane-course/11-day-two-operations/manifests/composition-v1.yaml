@@ -1,0 +1,47 @@
+# Revision 1 — the baseline. Apply this first and let XRs settle on it.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbucket-rev
+  labels:
+    version: v1
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XBucket
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $bucket := printf "%s-%s" $xr.metadata.namespace $xr.metadata.name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: us-east-1
+                tags:
+                  environment: {{ $xr.spec.environment }}
+                  revision: "v1"
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XBucket
+            status:
+              bucketName: {{ $bucket }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

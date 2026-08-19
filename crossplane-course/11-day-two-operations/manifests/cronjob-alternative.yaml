@@ -1,0 +1,72 @@
+# The BORING, PRODUCTION-READY alternative to a CronOperation.
+#
+# Operations are alpha. Until they are stable, scheduled work against your
+# control plane belongs in an ordinary Kubernetes CronJob with a ServiceAccount
+# scoped to exactly what it needs. Less exciting, entirely dependable.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bucket-auditor
+  namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bucket-auditor
+rules:
+  # Read-only, and only the kinds it actually needs. An auditor with write
+  # access is not an auditor.
+  - apiGroups: ["s3.aws.upbound.io"]
+    resources: ["buckets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["platform.acme.io"]
+    resources: ["xbuckets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bucket-auditor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bucket-auditor
+subjects:
+  - kind: ServiceAccount
+    name: bucket-auditor
+    namespace: crossplane-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bucket-audit
+  namespace: crossplane-system
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: bucket-auditor
+          restartPolicy: OnFailure
+          containers:
+            - name: audit
+              image: bitnami/kubectl:1.31
+              command:
+                - sh
+                - -c
+                - |
+                  echo "=== Buckets not fully healthy ==="
+                  kubectl get buckets -o json \
+                    | jq -r '.items[]
+                        | select(.status.conditions[]?
+                            | select(.type=="Ready" and .status!="True"))
+                        | .metadata.name'
+                  echo "=== Buckets missing an environment tag ==="
+                  kubectl get buckets -o json \
+                    | jq -r '.items[]
+                        | select(.spec.forProvider.tags.environment == null)
+                        | .metadata.name'

@@ -1,0 +1,138 @@
+# Challenge 11 Task 4 — nightly report of resources stuck unsynced.
+#
+# WHY "MORE THAN AN HOUR" AND NOT SIMPLY "UNSYNCED":
+#   Synced=False is a completely normal transient state. Every subnet in Module
+#   07 was unsynced until its VPC existed; every read replica in Module 09 is
+#   unsynced until its primary is available. Alerting on the raw condition means
+#   paging on every normal creation -- and within a week the alert is muted and
+#   never fires usefully again.
+#
+#   An hour is longer than every legitimate convergence in this course (real RDS
+#   at 5-15 minutes is the slowest), giving ~4x headroom while still catching a
+#   genuinely stuck resource the same working day.
+#
+#   The rule: alert on FAILURE TO CONVERGE, not on NOT-YET-CONVERGED.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: drift-reporter
+  namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: drift-reporter
+rules:
+  # Read-only across the managed resources it inspects. Listing CRDs is how it
+  # discovers which kinds exist without hardcoding them.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["list"]
+  - apiGroups:
+      - s3.aws.upbound.io
+      - ec2.aws.upbound.io
+      - rds.aws.upbound.io
+      - iam.aws.upbound.io
+    resources: ["*"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: ["*"]
+    verbs: ["get", "list"]
+---
+# Write access is scoped to ONE ConfigMap in its own namespace, by name.
+# A reporter that can write anything is not a reporter.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: drift-reporter-write
+  namespace: crossplane-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["drift-report"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: drift-reporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: drift-reporter
+subjects:
+  - kind: ServiceAccount
+    name: drift-reporter
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: drift-reporter-write
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: drift-reporter-write
+subjects:
+  - kind: ServiceAccount
+    name: drift-reporter
+    namespace: crossplane-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: drift-report
+  namespace: crossplane-system
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: drift-reporter
+          restartPolicy: OnFailure
+          containers:
+            - name: report
+              image: bitnami/kubectl:1.31
+              env:
+                - name: STUCK_SECONDS
+                  value: "3600"
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  NOW=$(date -u +%s)
+                  # A resource is "stuck" if its Synced condition has been False
+                  # since before NOW - STUCK_SECONDS. lastTransitionTime is what
+                  # makes duration measurable at all.
+                  REPORT=$(kubectl get managed -o json | jq -r --argjson now "$NOW" \
+                    --argjson limit "$STUCK_SECONDS" '
+                    .items[]
+                    | . as $r
+                    | (.status.conditions // [])[]
+                    | select(.type == "Synced" and .status != "True")
+                    | select(($now - (.lastTransitionTime | fromdateiso8601)) > $limit)
+                    | "\($r.kind)/\($r.metadata.name)\t\(((($now - (.lastTransitionTime | fromdateiso8601)) / 3600) | floor))h\t\(.reason // "-")\t\((.message // "-") | .[0:90])"
+                  ')
+
+                  if [ -z "$REPORT" ]; then
+                    BODY="$(date -u +%FT%TZ): no resources stuck unsynced for over ${STUCK_SECONDS}s."
+                  else
+                    COUNT=$(printf '%s\n' "$REPORT" | wc -l)
+                    BODY="$(date -u +%FT%TZ): ${COUNT} resource(s) stuck unsynced.
+                  RESOURCE	STUCK FOR	REASON	MESSAGE
+                  ${REPORT}"
+                  fi
+
+                  echo "$BODY"
+                  kubectl create configmap drift-report \
+                    --from-literal=report="$BODY" \
+                    --dry-run=client -o yaml | kubectl apply -f -
