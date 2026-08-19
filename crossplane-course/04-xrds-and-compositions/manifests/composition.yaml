@@ -1,0 +1,155 @@
+# The implementation behind the XBucket API.
+#
+# The developer writes 5 lines; this produces four managed resources with the
+# security settings they can no longer forget.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbucket-aws
+  labels:
+    provider: aws
+    tier: standard
+spec:
+  # This MUST match the XRD's group/version/kind exactly. A mismatch here is the
+  # #1 cause of "my XR does nothing and shows no error".
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XBucket
+
+  # Pipeline is the only mode in Crossplane v2.
+  mode: Pipeline
+  pipeline:
+    - step: render-resources
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+
+          # ---- The bucket itself ----
+          - name: bucket
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: Bucket
+              spec:
+                forProvider:
+                  region: us-east-1
+                providerConfigRef:
+                  name: default
+            patches:
+              # Build the real S3 bucket name from namespace + XR name.
+              # S3 names are globally unique across ALL of AWS, so a naming scheme
+              # is not optional on a real account. CombineFromComposite joins
+              # several XR fields into one value.
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: metadata.namespace
+                    - fromFieldPath: metadata.name
+                  strategy: string
+                  string:
+                    fmt: "%s-%s"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                policy:
+                  fromFieldPath: Required
+
+              # Tag it with the environment the developer asked for.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.environment
+                toFieldPath: spec.forProvider.tags.environment
+                policy:
+                  # Required turns a silent skip into a loud error. Use this on
+                  # anything that genuinely must be present -- it prevents more
+                  # debugging pain than any other single line.
+                  fromFieldPath: Required
+
+              # Tag with the namespace, so cost allocation by team works.
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.namespace
+                toFieldPath: spec.forProvider.tags.team
+
+              # Prod buckets survive deletion of the XR.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.environment
+                toFieldPath: spec.deletionPolicy
+                transforms:
+                  - type: map
+                    map:
+                      dev: Delete
+                      staging: Delete
+                      prod: Orphan
+
+              # Surface results back to the developer, so they never have to
+              # inspect the managed resources this composition created.
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.annotations[crossplane.io/external-name]
+                toFieldPath: status.bucketName
+
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.bucketArn
+
+          # ---- Block public access: NOT optional, NOT a field ----
+          # The developer cannot forget this because they were never asked.
+          - name: public-access-block
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketPublicAccessBlock
+              spec:
+                forProvider:
+                  region: us-east-1
+                  # matchControllerRef: true means "the Bucket composed by this
+                  # same XR". It is the idiomatic way for one composed resource
+                  # to reference a sibling, and it needs no name juggling.
+                  bucketSelector:
+                    matchControllerRef: true
+                  blockPublicAcls: true
+                  blockPublicPolicy: true
+                  ignorePublicAcls: true
+                  restrictPublicBuckets: true
+                providerConfigRef:
+                  name: default
+
+          # ---- Encryption at rest: also not optional ----
+          - name: encryption
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketServerSideEncryptionConfiguration
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  rule:
+                    - applyServerSideEncryptionByDefault:
+                        - sseAlgorithm: AES256
+                providerConfigRef:
+                  name: default
+
+          # ---- Lifecycle: expire objects after the requested retention ----
+          - name: lifecycle
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketLifecycleConfiguration
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  rule:
+                    - id: retention
+                      status: Enabled
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.retentionDays
+                toFieldPath: spec.forProvider.rule[0].expiration[0].days
+                policy:
+                  fromFieldPath: Required
+
+    # Mark the XR Ready once every composed resource is Ready.
+    - step: ready
+      functionRef:
+        name: function-auto-ready

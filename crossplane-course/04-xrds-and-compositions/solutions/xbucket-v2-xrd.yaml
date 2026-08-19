@@ -1,0 +1,80 @@
+# Challenge 04 Task 4 — two served versions of the XBucket API.
+#
+# Applying this demonstrates the core lesson: Kubernetes will happily SERVE both
+# versions, but without a conversion webhook the renamed field is simply empty
+# when read through the new version. Multi-version APIs need real conversion code.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbuckets.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XBucket
+    plural: xbuckets
+  versions:
+    - name: v1alpha1
+      served: true
+      # Only ONE version may be referenceable -- this is the version that
+      # Compositions bind to through compositeTypeRef.
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                environment:
+                  type: string
+                  enum: [dev, staging, prod]
+                retentionDays:
+                  type: integer
+                  default: 30
+                  minimum: 1
+                  maximum: 3650
+                versioning:
+                  type: boolean
+                  default: false
+              required: [environment]
+              x-kubernetes-validations:
+                - rule: "self.environment != 'prod' || !has(self.retentionDays) || self.retentionDays >= 30"
+                  message: "prod buckets must retain data for at least 30 days"
+            status:
+              type: object
+              properties:
+                bucketName: { type: string }
+                bucketArn: { type: string }
+    - name: v1beta1
+      served: true
+      referenceable: false
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                environment:
+                  type: string
+                  enum: [dev, staging, prod]
+                # Renamed and restructured. Without a conversion webhook, a
+                # v1alpha1 object read as v1beta1 shows this as empty.
+                retention:
+                  type: object
+                  properties:
+                    days:
+                      type: integer
+                      default: 30
+                      minimum: 1
+                      maximum: 3650
+                versioning:
+                  type: boolean
+                  default: false
+              required: [environment]
+            status:
+              type: object
+              properties:
+                bucketName: { type: string }
+                bucketArn: { type: string }

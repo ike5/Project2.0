@@ -1,0 +1,54 @@
+# Challenge 04 Task 1 — the XStaticSite API.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xstaticsites.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XStaticSite
+    plural: xstaticsites
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                indexDocument:
+                  description: The object served at the site root.
+                  type: string
+                  default: index.html
+                errorDocument:
+                  description: The object served for 4xx responses.
+                  type: string
+                  default: error.html
+                public:
+                  description: >-
+                    Whether the site is readable by anyone on the internet.
+                    Drives BOTH the public access block and the bucket policy.
+                  type: boolean
+                  default: false
+            status:
+              type: object
+              properties:
+                url:
+                  description: The website endpoint, for DNS records.
+                  type: string
+                bucketName:
+                  type: string
+      additionalPrinterColumns:
+        - name: PUBLIC
+          type: boolean
+          jsonPath: .spec.public
+        - name: URL
+          type: string
+          jsonPath: .status.url
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

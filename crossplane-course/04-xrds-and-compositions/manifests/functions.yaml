@@ -1,0 +1,20 @@
+# The composition functions this module's pipeline uses.
+#
+# Functions install exactly like providers: an OCI package, a pod, some RBAC.
+# They are cluster-wide, so you install each one once and every Composition
+# can reference it.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.8.2
+---
+# Marks the XR Ready once all its composed resources report Ready.
+# Almost every pipeline you write ends with this.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-auto-ready
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.4.1

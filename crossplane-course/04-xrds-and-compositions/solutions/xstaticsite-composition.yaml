@@ -1,0 +1,166 @@
+# Challenge 04 Task 1 — the AWS implementation of XStaticSite.
+#
+# Note the awkwardness of making one boolean drive two coordinated changes with
+# patch-and-transform alone. Module 05 rewrites this far more cleanly with
+# function-go-templating; the contrast is the point.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xstaticsite-aws
+  labels:
+    provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XStaticSite
+  mode: Pipeline
+  pipeline:
+    - step: render-resources
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+
+          - name: bucket
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: Bucket
+              spec:
+                forProvider:
+                  region: us-east-1
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: metadata.namespace
+                    - fromFieldPath: metadata.name
+                  strategy: string
+                  string:
+                    fmt: "%s-%s"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                policy:
+                  fromFieldPath: Required
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.annotations[crossplane.io/external-name]
+                toFieldPath: status.bucketName
+
+          - name: website
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketWebsiteConfiguration
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.indexDocument
+                toFieldPath: spec.forProvider.indexDocument[0].suffix
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.errorDocument
+                toFieldPath: spec.forProvider.errorDocument[0].key
+              # Surface the website endpoint so the developer can point DNS at it.
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.websiteEndpoint
+                toFieldPath: status.url
+
+          # Ownership controls must permit ACLs before a public policy can apply.
+          - name: ownership
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketOwnershipControls
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  rule:
+                    - objectOwnership: BucketOwnerPreferred
+                providerConfigRef:
+                  name: default
+
+          - name: public-access-block
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketPublicAccessBlock
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  blockPublicAcls: true
+                  ignorePublicAcls: true
+                providerConfigRef:
+                  name: default
+            patches:
+              # INVERTED: public: true means DON'T block public policies.
+              # Getting this backwards yields a site that 403s while looking right.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.public
+                toFieldPath: spec.forProvider.blockPublicPolicy
+                transforms:
+                  - type: convert
+                    convert:
+                      toType: string
+                  - type: map
+                    map:
+                      "true": false
+                      "false": true
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.public
+                toFieldPath: spec.forProvider.restrictPublicBuckets
+                transforms:
+                  - type: convert
+                    convert:
+                      toType: string
+                  - type: map
+                    map:
+                      "true": false
+                      "false": true
+
+          # patch-and-transform cannot conditionally OMIT a resource, so this
+          # always renders -- we flip Allow/Deny instead. Ugly, and fixed in
+          # Module 05.
+          - name: policy
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketPolicy
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.public
+                    - fromFieldPath: metadata.namespace
+                    - fromFieldPath: metadata.name
+                  strategy: string
+                  string:
+                    fmt: "%t|%s|%s"
+                toFieldPath: spec.forProvider.policy
+                transforms:
+                  - type: string
+                    string:
+                      type: Regexp
+                      regexp:
+                        match: '^true\|(.*)\|(.*)$'
+                        group: 0
+                  # A regexp transform is doing work a template should do.
+                  # See Module 05 for how this SHOULD be written.
+    - step: ready
+      functionRef:
+        name: function-auto-ready

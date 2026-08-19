@@ -1,0 +1,19 @@
+# A resource that survives deletion of its Kubernetes object.
+#
+# This is the setting you want on anything whose loss would be an incident:
+# production databases, buckets holding customer data, anything with a compliance
+# retention requirement.
+#
+# Deleting this object removes it from Kubernetes and leaves the S3 bucket running.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: precious-data
+spec:
+  forProvider:
+    region: us-east-1
+    tags:
+      criticality: high
+  providerConfigRef:
+    name: default
+  deletionPolicy: Orphan

@@ -1,0 +1,19 @@
+# Choosing a specific implementation.
+#
+# Two Compositions now match XBucket, so Crossplane cannot pick one on its own --
+# an XR without a selector fails with CompositionSelectionFailed. Here we ask for
+# the minimal tier explicitly by label.
+apiVersion: platform.acme.io/v1alpha1
+kind: XBucket
+metadata:
+  name: cheap-bucket
+  namespace: team-payments
+spec:
+  environment: dev
+  retentionDays: 1
+  # Crossplane's own machinery lives under spec.crossplane, kept out of the way
+  # of the fields YOUR api defines.
+  crossplane:
+    compositionSelector:
+      matchLabels:
+        tier: minimal

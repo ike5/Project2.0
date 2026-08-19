@@ -1,0 +1,12 @@
+# The same API, production environment.
+#
+# Note what changes: one word. The composition turns that word into a different
+# deletionPolicy (Orphan) and different tags, without the developer knowing.
+apiVersion: platform.acme.io/v1alpha1
+kind: XBucket
+metadata:
+  name: customer-uploads
+  namespace: team-payments
+spec:
+  environment: prod
+  retentionDays: 365

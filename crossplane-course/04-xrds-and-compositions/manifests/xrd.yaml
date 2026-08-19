@@ -1,0 +1,76 @@
+# The API you are offering your developers.
+#
+# This creates a real CRD in the cluster: after applying it, `kubectl get xbuckets`
+# works and `kubectl explain xbucket.spec` documents your schema.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  # The name MUST be <plural>.<group>. Crossplane rejects anything else.
+  name: xbuckets.platform.acme.io
+spec:
+  # Namespaced is the v2 default. XRs live in a namespace like any other workload,
+  # so RBAC and namespace isolation apply without extra machinery.
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XBucket
+    plural: xbuckets
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                environment:
+                  description: >-
+                    Which environment this bucket belongs to. Drives tagging and,
+                    in the prod composition, whether versioning is enabled.
+                  type: string
+                  # An enum makes a typo IMPOSSIBLE rather than merely unlikely.
+                  # Schema validation you write here is validation you never have
+                  # to implement in a composition function.
+                  enum: [dev, staging, prod]
+                retentionDays:
+                  description: How long to keep objects before expiring them.
+                  type: integer
+                  default: 30
+                  minimum: 1
+                  maximum: 3650
+                versioning:
+                  description: >-
+                    Keep previous versions of objects. Forced on for prod
+                    regardless of what is set here.
+                  type: boolean
+                  default: false
+              required:
+                - environment
+            status:
+              type: object
+              properties:
+                # Values the composition writes back so the developer can wire
+                # their application up without inspecting managed resources.
+                bucketName:
+                  description: The real S3 bucket name, including the generated suffix.
+                  type: string
+                bucketArn:
+                  description: The bucket's ARN, for use in IAM policies.
+                  type: string
+      # Show useful columns in `kubectl get xbuckets`.
+      additionalPrinterColumns:
+        - name: ENVIRONMENT
+          type: string
+          jsonPath: .spec.environment
+        - name: BUCKET
+          type: string
+          jsonPath: .status.bucketName
+        - name: SYNCED
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Synced')].status
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

@@ -1,0 +1,18 @@
+# A resource whose spec stays exactly as written.
+#
+# Omitting LateInitialize from managementPolicies stops Crossplane writing
+# cloud-chosen defaults back into spec.forProvider. Useful when your manifests
+# live in git and you want `kubectl get -o yaml` to match the file.
+#
+# The cost: without late initialization, some providers do more work on each
+# reconcile to distinguish "unset" from "set to the default".
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: minimal-spec
+spec:
+  managementPolicies: ["Observe", "Create", "Update", "Delete"]
+  forProvider:
+    region: us-east-1
+  providerConfigRef:
+    name: default

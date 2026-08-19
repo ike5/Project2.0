@@ -1,0 +1,26 @@
+# Step 2 of importing: take full control.
+#
+# Apply this only AFTER observe-only.yaml has shown you what the real resource
+# looks like, and after you have copied those real values into spec.forProvider.
+#
+# If your spec disagrees with reality here, Crossplane will "correct" the live
+# resource on its next reconcile. That is the whole risk of import, and it is why
+# the Observe step is not optional.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: legacy-bucket
+  annotations:
+    crossplane.io/external-name: legacy-data-2019
+spec:
+  managementPolicies: ["*"]
+  forProvider:
+    region: us-east-1
+    tags:
+      imported-by: crossplane
+      original-owner: unknown
+  providerConfigRef: 
+    name: default
+  # Belt and braces: even with full management, don't let deleting the Kubernetes
+  # object destroy infrastructure that predates our involvement with it.
+  deletionPolicy: Orphan

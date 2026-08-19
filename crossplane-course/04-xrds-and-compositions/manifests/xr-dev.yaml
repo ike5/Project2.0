@@ -1,0 +1,12 @@
+# What a developer writes. This is the entire interface.
+#
+# No AWS knowledge. No mention of encryption, public access, or lifecycle rules --
+# the platform guarantees those. Five lines of spec.
+apiVersion: platform.acme.io/v1alpha1
+kind: XBucket
+metadata:
+  name: scratch-data
+  namespace: team-payments
+spec:
+  environment: dev
+  retentionDays: 7

@@ -1,0 +1,24 @@
+# Step 1 of importing existing infrastructure: LOOK, DON'T TOUCH.
+#
+# The external-name annotation tells Crossplane "this object refers to a resource
+# that already exists in AWS with this name" — so it adopts rather than creates.
+#
+# managementPolicies: ["Observe"] means Crossplane may ONLY read it. It cannot
+# create, update, or delete. This makes import a zero-risk operation: worst case,
+# you learn the resource isn't what you thought.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: legacy-bucket
+  annotations:
+    # This must EXACTLY match the real bucket name in AWS.
+    crossplane.io/external-name: legacy-data-2019
+spec:
+  managementPolicies: ["Observe"]
+  forProvider:
+    region: us-east-1
+    # Note how little is specified. Under Observe-only that's fine: Crossplane
+    # never compares this to reality, it only reads. You fill this in properly
+    # AFTER you have seen what status.atProvider reports.
+  providerConfigRef:
+    name: default
