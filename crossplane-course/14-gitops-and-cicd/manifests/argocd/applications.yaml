@@ -1,0 +1,134 @@
+# The platform, under GitOps.
+#
+# THREE THINGS TO NOTICE:
+#   1. sync-wave ordering -- providers must be healthy before XRDs can
+#      reference their CRDs, and XRDs must exist before Compositions.
+#   2. ignoreDifferences on forProvider -- without it, Crossplane's late
+#      initialization makes every managed resource permanently OutOfSync.
+#   3. NO automated prune on the platform repo. See the comment below.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-bootstrap
+  namespace: argocd
+  annotations:
+    # WAVE 1: providers and functions. Nothing else can work until their
+    # CRDs exist.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/acme/platform.git
+    targetRevision: v1.4.2      # A TAG, not a branch. See README section 7.
+    path: bootstrap
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      selfHeal: true
+      # NO prune here. If someone accidentally removes a provider from git,
+      # pruning it strands every managed resource it owns (Module 02's
+      # challenge) with no controller left to process their finalizers.
+      # Provider removal is a deliberate, manual act.
+      prune: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        maxDuration: 5m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-apis
+  namespace: argocd
+  annotations:
+    # WAVE 2: XRDs. They need the providers' CRDs to exist.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/acme/platform.git
+    targetRevision: v1.4.2
+    path: apis
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false      # Removing an XRD deletes its CRD, and deleting a CRD
+                        # deletes every XR of that kind. Never automatic.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-compositions
+  namespace: argocd
+  annotations:
+    # WAVE 3: Compositions reference the XRDs from wave 2.
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/acme/platform.git
+    targetRevision: v1.4.2
+    path: compositions
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true       # Safe here: removing a Composition does not delete
+                        # anything, and pinned XRs keep their revision.
+---
+# A TEAM's XRs, from the team's OWN repository.
+#
+# Different repo, different owners, different review rules, different blast
+# radius. A team changing their own database size should not require a platform
+# engineer's approval; a platform engineer changing the composition behind it
+# should require review by someone who understands all 40 consumers.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: team-payments-infra
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/acme/team-payments.git
+    targetRevision: main
+    path: infrastructure
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-payments
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=false     # The platform creates tenant namespaces.
+
+  # ─────────── THE SETTING THAT BITES EVERYBODY ───────────
+  # Crossplane LATE-INITIALIZES managed resources: it writes cloud-chosen
+  # defaults back into spec.forProvider (Module 02 section 7). Argo CD then
+  # sees fields the git manifest does not have and reports OutOfSync FOREVER.
+  #
+  # A permanently-yellow application trains your team to ignore sync status,
+  # which defeats the entire point of running Argo CD.
+  #
+  # The alternative is to disable late initialization instead (Module 03), by
+  # omitting LateInitialize from managementPolicies.
+  ignoreDifferences:
+    - group: "*.aws.upbound.io"
+      kind: "*"
+      jsonPointers:
+        - /spec/forProvider
+    - group: "apiextensions.crossplane.io"
+      kind: "*"
+      jsonPointers:
+        - /spec/crossplane/compositionRevisionRef

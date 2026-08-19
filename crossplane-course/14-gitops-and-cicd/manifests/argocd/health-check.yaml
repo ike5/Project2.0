@@ -1,0 +1,92 @@
+# Teach Argo CD what a healthy Crossplane resource looks like.
+#
+# WITHOUT THIS, Argo CD has no idea how to interpret an XR's status, so every
+# one shows as "Progressing" forever and your sync never completes. The
+# application stays permanently yellow, and people learn to ignore it.
+#
+# The Lua below reads Crossplane's standard conditions -- the same Synced and
+# Ready you have been reading by hand since Module 02.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # A single check covering every Crossplane composite and managed resource.
+  resource.customizations: |
+    "*.upbound.io/*":
+      health.lua: |
+        health_status = {}
+        if obj.status == nil or obj.status.conditions == nil then
+          health_status.status = "Progressing"
+          health_status.message = "No status reported yet"
+          return health_status
+        end
+        local synced, ready
+        for _, condition in ipairs(obj.status.conditions) do
+          if condition.type == "Synced" then synced = condition end
+          if condition.type == "Ready"  then ready  = condition end
+        end
+        -- Synced=False means the cloud API call FAILED. That is a hard error,
+        -- not a slow start, so report it as Degraded rather than Progressing.
+        if synced ~= nil and synced.status == "False" then
+          health_status.status = "Degraded"
+          health_status.message = synced.message or synced.reason or "Not synced"
+          return health_status
+        end
+        if ready ~= nil and ready.status == "True" then
+          health_status.status = "Healthy"
+          health_status.message = "Resource is ready"
+          return health_status
+        end
+        -- Synced=True, Ready=False is NORMAL while a resource is provisioning.
+        health_status.status = "Progressing"
+        health_status.message = (ready and (ready.message or ready.reason))
+                                or "Waiting for the resource to become ready"
+        return health_status
+
+    "apiextensions.crossplane.io/CompositeResourceDefinition":
+      health.lua: |
+        health_status = {}
+        if obj.status == nil or obj.status.conditions == nil then
+          health_status.status = "Progressing"
+          health_status.message = "Waiting for the XRD to be established"
+          return health_status
+        end
+        for _, condition in ipairs(obj.status.conditions) do
+          if condition.type == "Established" and condition.status == "True" then
+            health_status.status = "Healthy"
+            health_status.message = "XRD established"
+            return health_status
+          end
+        end
+        health_status.status = "Progressing"
+        health_status.message = "XRD not yet established"
+        return health_status
+
+    "pkg.crossplane.io/Provider":
+      health.lua: |
+        health_status = {}
+        if obj.status == nil or obj.status.conditions == nil then
+          health_status.status = "Progressing"
+          health_status.message = "Installing"
+          return health_status
+        end
+        for _, condition in ipairs(obj.status.conditions) do
+          if condition.type == "Healthy" then
+            if condition.status == "True" then
+              health_status.status = "Healthy"
+              health_status.message = "Provider is healthy"
+            else
+              health_status.status = "Degraded"
+              health_status.message = condition.message or "Provider unhealthy"
+            end
+            return health_status
+          end
+        end
+        health_status.status = "Progressing"
+        health_status.message = "Installing"
+        return health_status

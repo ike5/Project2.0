@@ -1,0 +1,18 @@
+# prod — pinned to an immutable, versioned artifact.
+#
+# Moves only by a deliberate, reviewed pull request.
+#
+# PROMOTION IS THIS ONE LINE CHANGING. That is the entire mechanism, and it is
+# why Module 10's packaging matters: without a versioned artifact, "promotion"
+# can only mean pointing at a branch, which is a moving target you cannot
+# reason about or roll back precisely.
+apiVersion: pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: acme-platform
+spec:
+  package: ghcr.io/acme/platform:v1.0.0
+  # Never revisionActivationPolicy: Automatic with a floating tag. The whole
+  # point is that nothing moves unless a human moved it.
+  revisionActivationPolicy: Automatic
+  packagePullPolicy: IfNotPresent

@@ -1,0 +1,55 @@
+# Wave 1: providers and functions. Nothing else can work until their CRDs exist.
+#
+# Every tag is pinned. A provider that upgrades itself changes how your
+# infrastructure reconciles at a moment you did not choose (Module 11).
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-s3
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-s3:v1.21.0
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-rds
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-rds:v1.21.0
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-go-templating
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-go-templating:v0.9.2
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-auto-ready
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.4.1
+---
+# The explicit, reviewable list of every cloud resource type this platform may
+# create. It is a security artifact as much as a performance one (Module 02).
+#
+# WIDENING is safe. NARROWING removes CRDs, and deleting a CRD deletes every
+# object of that kind -- check nothing uses a type before removing it.
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: platform-resources
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  activate:
+    - "*.s3.aws.upbound.io"
+    - "*.rds.aws.upbound.io"

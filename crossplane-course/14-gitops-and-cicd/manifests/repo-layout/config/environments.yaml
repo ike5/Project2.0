@@ -1,0 +1,25 @@
+# Per-environment facts. Safe to commit: account IDs and VPC IDs are not secrets.
+#
+# NOT FOR CREDENTIALS. EnvironmentConfig contents flow into function inputs,
+# which get logged (Module 10).
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: aws-dev
+  labels:
+    environment: dev
+data:
+  accountId: "111111111111"
+  region: us-east-1
+  costCenter: engineering-sandbox
+---
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: aws-prod
+  labels:
+    environment: prod
+data:
+  accountId: "333333333333"
+  region: us-east-1
+  costCenter: platform-production

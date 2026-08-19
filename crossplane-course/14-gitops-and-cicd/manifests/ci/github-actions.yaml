@@ -1,0 +1,108 @@
+# .github/workflows/platform.yaml
+#
+# The pull-request gate for a Crossplane platform repo. Every check runs
+# without a cluster, so the whole thing finishes in a couple of minutes.
+name: Platform CI
+
+on:
+  pull_request:
+    paths:
+      - 'apis/**'
+      - 'compositions/**'
+      - 'tests/**'
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so the destructive-change check can render the
+          # composition as it exists on the base branch.
+          fetch-depth: 0
+
+      - name: Install the Crossplane CLI
+        run: |
+          curl -sL https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh \
+            | CHANNEL=stable sh
+          sudo mv crossplane /usr/local/bin/
+          crossplane version --client
+
+      - name: Render, validate, and check
+        run: ./ci/test-compositions.sh --base-ref origin/${{ github.base_ref || 'main' }}
+
+  # A SEPARATE JOB so the destructive check can be a required status check that
+  # a label can override. Keeping it out of the main job means a breaking change
+  # does not also mask ordinary test failures.
+  destructive-change-gate:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install the Crossplane CLI
+        run: |
+          curl -sL https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh \
+            | CHANNEL=stable sh
+          sudo mv crossplane /usr/local/bin/
+
+      - name: Check for renamed composed resources
+        id: check
+        continue-on-error: true
+        run: ./ci/check-destructive.sh --base-ref origin/${{ github.base_ref }}
+
+      - name: Require explicit approval for a breaking change
+        if: steps.check.outcome == 'failure'
+        run: |
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'breaking-change-approved') }}" = "true" ]; then
+            echo "::warning::This PR renames composed resources and WILL RECREATE"
+            echo "::warning::infrastructure for every existing XR. Proceeding because"
+            echo "::warning::the breaking-change-approved label is present."
+            echo "Confirm the release notes describe the migration (Module 10)."
+          else
+            echo "::error::This PR renames a composed resource."
+            echo "::error::Crossplane identifies composed resources by name, so this"
+            echo "::error::will DELETE AND RECREATE infrastructure for every existing"
+            echo "::error::XR. On a database, that is your data."
+            echo "::error::"
+            echo "::error::If intended: add the 'breaking-change-approved' label, bump"
+            echo "::error::the MAJOR version, and document the migration."
+            exit 1
+          fi
+
+  # Only after everything passes, and only on main.
+  publish:
+    needs: [test, destructive-change-gate]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Crossplane CLI
+        run: |
+          curl -sL https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh \
+            | CHANNEL=stable sh
+          sudo mv crossplane /usr/local/bin/
+
+      - name: Build the Configuration package
+        run: crossplane xpkg build --package-root=. --package-file=platform.xpkg
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" \
+          | crossplane xpkg login --username="${{ github.actor }}" --password-stdin ghcr.io
+
+      # A REAL VERSION, never :latest. A consumer pinned to :latest gets your
+      # next commit applied to their production infrastructure at a moment they
+      # did not choose (Module 10).
+      - name: Push
+        run: |
+          VERSION="$(cat VERSION)"
+          crossplane xpkg push --package-files=platform.xpkg \
+            "ghcr.io/${{ github.repository }}:${VERSION}"

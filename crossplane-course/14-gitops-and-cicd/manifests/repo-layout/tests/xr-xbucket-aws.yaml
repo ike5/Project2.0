@@ -1,0 +1,11 @@
+# A test fixture. CI renders this through compositions/xbucket-aws.yaml.
+apiVersion: platform.acme.io/v1alpha1
+kind: XBucket
+metadata:
+  name: ci-test
+  namespace: ci
+  labels:
+    acme.io/owner: platform
+spec:
+  environment: dev
+  retentionDays: 7

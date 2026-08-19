@@ -1,0 +1,110 @@
+# Challenge 14 Task 1 — GitOps as an actual control, not a convention.
+#
+# GitOps only constrains anything if the cluster REFUSES direct changes. If a
+# human can still `kubectl apply` a Composition, then git is documentation, not
+# a gate.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-writer
+  annotations:
+    acme.io/description: >-
+      Write access to platform definitions. Bound ONLY to Argo CD's controller,
+      plus temporarily to a human during a break-glass incident.
+rules:
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: ["compositeresourcedefinitions", "compositions", "environmentconfigs"]
+    verbs: ["*"]
+  - apiGroups: ["pkg.crossplane.io"]
+    resources: ["providers", "functions", "configurations", "deploymentruntimeconfigs"]
+    verbs: ["*"]
+  - apiGroups: ["aws.upbound.io"]
+    resources: ["providerconfigs"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-platform-writer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-writer
+subjects:
+  # The ONLY standing holder of this permission.
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: argocd
+---
+# What humans get: read everything, change nothing.
+#
+# Engineers still need to SEE the platform to debug it (Module 12), so this is
+# deliberately generous on reads. It is the write verbs that are absent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-reader
+rules:
+  - apiGroups: ["apiextensions.crossplane.io", "pkg.crossplane.io", "aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["*.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events", "pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-engineers-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-reader
+subjects:
+  - kind: Group
+    name: acme:platform-engineers
+    apiGroup: rbac.authorization.k8s.io
+---
+# The break-glass path, for when Argo CD itself is broken.
+#
+# NOT BOUND TO ANYONE. Binding is the break-glass act, and the timestamp in the
+# binding name is what lets Module 13's audit job age it:
+#
+#   kubectl create clusterrolebinding "break-glass-platform-$USER-$(date +%s)" \
+#     --clusterrole=platform-writer --user="$USER"
+#   # ...minimum change...
+#   kubectl delete clusterrolebinding "break-glass-platform-$USER-<timestamp>"
+#
+# STEP 5 IS THE ONE PEOPLE SKIP: reconcile git with what you did BEFORE Argo CD
+# recovers. Otherwise selfHeal reverts your emergency fix at the worst moment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-break-glass-procedure
+  namespace: crossplane-system
+data:
+  RUNBOOK.md: |
+    # Emergency platform change (Argo CD unavailable)
+
+    An emergency path that does not exist gets invented under pressure, badly.
+    This one is designed in advance, is noisy, and expires.
+
+    1. Announce in #incident. Record the ticket number.
+    2. Confirm Argo CD is genuinely unavailable:
+         kubectl get pods -n argocd
+         kubectl get applications -n argocd
+       If Argo CD is healthy, make the change through a pull request instead.
+    3. Bind, with a timestamp so the audit can age it:
+         kubectl create clusterrolebinding "break-glass-platform-$USER-$(date +%s)" \
+           --clusterrole=platform-writer --user="$USER"
+    4. Make the MINIMUM change. Note exactly what you applied.
+    5. RECONCILE GIT with what you did, and merge it. Do this BEFORE Argo CD
+       recovers -- selfHeal will otherwise revert your fix.
+    6. Unbind:
+         kubectl delete clusterrolebinding "break-glass-platform-$USER-<timestamp>"
+    7. Record in the incident log: what, why, ticket, who approved.
+
+    Module 13's audit CronJob pages if any break-glass binding survives an hour.
