@@ -100,6 +100,10 @@ When you can deploy this app from scratch, explain every object, and debug it wh
 it breaks — **you've gone from zero to Kubernetes mastery.** 🎓
 
 ## What's next (beyond this course)
+- **[The Crossplane course](../../crossplane-course/)** — the natural sequel. You've
+  learned to *consume* Kubernetes; there you *extend* it, turning cloud
+  infrastructure into objects you `kubectl apply` and shipping a self-service
+  platform API. It assumes exactly what you've just finished.
 - Managed clusters (EKS/GKE/AKS) and the cloud-specific bits (LoadBalancers, IAM).
 - Service meshes (Istio/Linkerd), progressive delivery (Argo Rollouts/Flagger).
 - Operators & CRDs; Cilium/eBPF networking; policy engines (OPA/Kyverno).

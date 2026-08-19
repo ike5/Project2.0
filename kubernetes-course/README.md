@@ -8,6 +8,11 @@ for free, with no cloud account required.
 > real-world skills (not exam cramming). Every lesson is paired with a runnable lab
 > on a real multi-node cluster running on your laptop.
 
+> **Finished this course?** The **[Crossplane course](../crossplane-course/)** picks
+> up where Module 12 leaves off: instead of *consuming* a platform, you *build* one —
+> extending the Kubernetes API so cloud infrastructure becomes objects you `kubectl
+> apply`, and shipping a self-service API your developers use without knowing AWS.
+
 ---
 
 ## Why this course is different
