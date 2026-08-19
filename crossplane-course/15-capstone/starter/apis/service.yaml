@@ -1,0 +1,68 @@
+# STAGE 1 — the API. Start here, and get it right before writing any
+# composition: the XRD is your public contract, and it is the hardest thing to
+# change later (Module 10).
+#
+# The design question to keep asking: SHOULD A DEVELOPER BE ABLE TO SET THIS?
+# Every field is a support burden and a way to misconfigure something. Module 04
+# section 8 is the checklist.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: services.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: Service
+    plural: services
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                image:
+                  description: The container image to run.
+                  type: string
+
+                # TODO: t-shirt sizing. An enum of small/medium/large.
+                # The composition maps this to instanceClass and replicas --
+                # a developer should never see "db.t3.micro".
+
+                # TODO: `database` and `storage` booleans. When false the
+                # resources must NOT EXIST, not merely be configured
+                # differently. That needs function-go-templating (Module 05).
+
+                # TODO: `environment`. Think hard about this one: if a
+                # developer can set it, they can request production behaviour
+                # from a dev namespace (Module 13, attack 7). Consider deriving
+                # it from a namespace label instead.
+
+                host:
+                  description: Hostname to route to this service.
+                  type: string
+              required:
+                - image
+
+              # TODO: x-kubernetes-validations.
+              # Any field whose change would DESTROY DATA must be immutable.
+              # Module 09 section 7 lists which RDS changes force a replacement.
+              # A rejected apply with a clear message beats a silent replacement.
+
+            status:
+              type: object
+              properties:
+                # TODO: what does a developer need back? The URL, the bucket
+                # name, the database host. NEVER the password -- it is available
+                # to their Pod through a Secret and should never be readable
+                # from the XR.
+                url:
+                  type: string
+
+      # TODO: additionalPrinterColumns, so `kubectl get services.platform.acme.io`
+      # is useful without -o yaml.

@@ -1,0 +1,15 @@
+# What a developer writes. This file is the whole point of the capstone: if it
+# needs more than this, the platform is not doing its job.
+apiVersion: platform.acme.io/v1alpha1
+kind: Service
+metadata:
+  name: checkout
+  namespace: team-payments
+  labels:
+    acme.io/owner: team-payments
+spec:
+  image: xp-course/sample-app:1.0
+  size: medium
+  database: true
+  storage: true
+  host: checkout.localhost

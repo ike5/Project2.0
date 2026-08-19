@@ -1,0 +1,81 @@
+# STAGES 2-5 — the implementation.
+#
+# Build it incrementally and render after every change:
+#   crossplane render ../examples/service.yaml service-aws.yaml ../tests/functions.yaml
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: service-aws
+  labels:
+    provider: aws
+    tier: standard
+spec:
+  compositeTypeRef:
+    # This MUST match the XRD's group, version AND kind exactly. A mismatch
+    # produces an XR that silently does nothing (Module 12, stack 1).
+    apiVersion: platform.acme.io/v1alpha1
+    kind: Service
+  mode: Pipeline
+  pipeline:
+    # TODO (Stage 5): load per-environment facts from an EnvironmentConfig so
+    # this composition contains no account IDs. MUST BE THE FIRST STEP -- later
+    # steps read what it puts into context (Module 10).
+
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+
+            {{/* TODO Stage 2: map size -> instanceClass and replicas here.
+                 The developer says "medium"; only the platform needs to know
+                 what that costs. */}}
+
+            {{/* TODO Stage 2: the DATABASE, only when spec.database is true.
+                 Remember:
+                   - a SubnetGroup spanning >= 2 AZs, or RDS rejects it
+                   - autoGeneratePassword, never a literal
+                   - writeConnectionSecretToRef into the XR's namespace
+                   - publiclyAccessible: false, storageEncrypted: true
+                 See Module 09. */}}
+
+            {{/* TODO Stage 2: the BUCKET, only when spec.storage is true.
+                 With a public access block -- which is NOT a field the
+                 developer can set, because they must not be able to forget it. */}}
+
+            {{/* TODO Stage 4: the IAM ROLE, scoped to exactly the bucket this
+                 service created. Two statements: object actions on bucket/*,
+                 ListBucket on the bucket itself. Module 08. */}}
+
+            {{/* TODO Stage 3: the DEPLOYMENT. In Crossplane v2 you compose this
+                 DIRECTLY -- no provider-kubernetes, no Object wrapper.
+                 Wire the database credentials in with secretKeyRef so no human
+                 ever handles the password. Module 06. */}}
+
+            {{/* TODO Stage 3: Service, and an Ingress when spec.host is set. */}}
+
+            {{/* TODO: STATUS. Guard every read of .observed.resources -- on the
+                 first reconcile nothing exists yet, and an unguarded nil lookup
+                 fails the WHOLE render, creating nothing at all (Module 12,
+                 stack 3). */}}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: Service
+            status:
+              url: ""
+
+    # TODO (Stage 3): a connection-details step republishing the database's
+    # credentials under YOUR platform's key names (DATABASE_HOST, not
+    # `endpoint`). That indirection is what lets you swap RDS for Aurora, or
+    # AWS for GCP, without touching a single application. Module 09 section 4.
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready

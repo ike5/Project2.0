@@ -1,0 +1,29 @@
+# The whole point of the capstone: this is everything a developer writes.
+apiVersion: platform.acme.io/v1alpha1
+kind: Service
+metadata:
+  name: checkout
+  namespace: team-payments
+  labels:
+    acme.io/owner: team-payments
+spec:
+  image: xp-course/sample-app:1.0
+  size: medium
+  database: true
+  storage: true
+  host: checkout.localhost
+---
+# A minimal one: no database, no bucket, no ingress. The composition renders
+# only a ServiceAccount, a Deployment and a Service.
+apiVersion: platform.acme.io/v1alpha1
+kind: Service
+metadata:
+  name: worker
+  namespace: team-payments
+  labels:
+    acme.io/owner: team-payments
+spec:
+  image: xp-course/sample-app:1.0
+  size: small
+  database: false
+  storage: false

@@ -1,0 +1,62 @@
+# One ProviderConfig per tenant namespace. The composition selects it by
+# namespace name, so a developer cannot choose which cloud identity their
+# resources use.
+#
+# In this course both point at the local emulator. On real AWS this is the
+# boundary that actually holds — see the note at the bottom.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: team-payments
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds
+      key: creds
+  endpoint:
+    hostnameImmutable: true
+    url:
+      type: Static
+      static: http://moto.aws-local.svc.cluster.local:5000
+  skip_credentials_validation: true
+  skip_metadata_api_check: true
+  skip_requesting_account_id: true
+  skip_region_validation: true
+  s3_use_path_style: true
+---
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: team-search
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds
+      key: creds
+  endpoint:
+    hostnameImmutable: true
+    url:
+      type: Static
+      static: http://moto.aws-local.svc.cluster.local:5000
+  skip_credentials_validation: true
+  skip_metadata_api_check: true
+  skip_requesting_account_id: true
+  skip_region_validation: true
+  s3_use_path_style: true
+#
+# ON REAL AWS, replace each of the above with:
+#
+#   spec:
+#     credentials:
+#       source: IRSA
+#     assumeRoleChain:
+#       - roleARN: arn:aws:iam::444444444444:role/TeamPaymentsProvisioner
+#
+# ...with each tenant in a SEPARATE ACCOUNT. That single change moves the
+# tenancy boundary from "our RBAC is correct" to "AWS refuses" — and AWS does
+# not care what our cluster believes. It is the only control in this platform
+# that survives a serious misconfiguration of the cluster itself.

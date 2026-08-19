@@ -1,0 +1,547 @@
+# The Service implementation.
+#
+# Twelve lines of developer YAML in; a database, a bucket, an IAM role, a
+# Deployment, a Service and an Ingress out — with credentials wired in and no
+# human ever handling a password.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: service-aws
+  labels:
+    provider: aws
+    tier: standard
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: Service
+  mode: Pipeline
+  pipeline:
+    # ── STEP 1: the environment's facts ──────────────────────────────
+    # MUST be first: later steps read what this puts into context.
+    #
+    # The environment comes from the NAMESPACE, not from the XR, so a developer
+    # cannot request production behaviour from a dev namespace.
+    - step: environment
+      functionRef:
+        name: function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Selector
+              selector:
+                matchLabels:
+                  - key: environment
+                    type: FromCompositeFieldPath
+                    valueFromFieldPath: status.environment
+                    # Fail loudly rather than rendering an IAM role with an
+                    # empty account ID (Module 10, lab part D).
+                    fromFieldPathPolicy: Required
+
+    # ── STEP 2: derive the environment from the namespace ────────────
+    - step: derive-environment
+      functionRef:
+        name: function-extra-resources
+      input:
+        apiVersion: extra-resources.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          extraResources:
+            - apiVersion: v1
+              kind: Namespace
+              into: ns
+              type: Selector
+              selector:
+                maxMatch: 1
+                matchLabels:
+                  - key: kubernetes.io/metadata.name
+                    type: FromCompositeFieldPath
+                    valueFromFieldPath: metadata.namespace
+
+    # ── STEP 3: everything ───────────────────────────────────────────
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := "us-east-1" -}}
+
+            {{/* ── The environment, from the namespace label ──
+                 Developers cannot patch namespace labels, so this is a fact
+                 they cannot forge. */}}
+            {{- $env := "dev" -}}
+            {{- $nsList := index .context "apiextensions.crossplane.io/extra-resources" "ns" -}}
+            {{- if $nsList }}
+            {{- $nsObj := index $nsList 0 -}}
+            {{- $env = dig "metadata" "labels" "acme.io/environment" "dev" $nsObj.resource -}}
+            {{- end -}}
+            {{- $isProd := eq $env "prod" -}}
+
+            {{/* ── Account facts from the EnvironmentConfig ──
+                 No account IDs are hardcoded in this composition, so it works
+                 unchanged in every environment. */}}
+            {{- $envData := dict -}}
+            {{- if hasKey .context "apiextensions.crossplane.io/environment" -}}
+            {{- $envData = index .context "apiextensions.crossplane.io/environment" -}}
+            {{- end -}}
+            {{- $accountId := dig "accountId" "123456789012" $envData -}}
+            {{- $oidcHost := dig "oidcHost" "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE" $envData -}}
+
+            {{/* ── T-SHIRT SIZING ──
+                 The developer says "medium". Only the platform knows what that
+                 costs, and changing this mapping needs no consumer change. */}}
+            {{- $class := "db.t3.micro" -}}
+            {{- $replicas := 1 -}}
+            {{- $storageGB := 20 -}}
+            {{- if eq $xr.spec.size "medium" -}}
+              {{- $class = "db.t3.small" -}}{{- $replicas = 2 -}}{{- $storageGB = 50 -}}
+            {{- end -}}
+            {{- if eq $xr.spec.size "large" -}}
+              {{- $class = "db.r6g.large" -}}{{- $replicas = 4 -}}{{- $storageGB = 200 -}}
+            {{- end -}}
+            {{- if $xr.spec.minReplicas }}{{ $replicas = $xr.spec.minReplicas }}{{ end -}}
+
+            {{- $connSecret := printf "%s-conn" $name -}}
+            {{- $bucket := printf "%s-%s-data" $ns $name -}}
+            {{- $dbName := printf "%s-%s" $ns $name -}}
+            {{- $roleName := printf "%s-%s" $ns $name -}}
+
+            {{/* ══════════════ DATABASE ══════════════
+                 Genuinely absent when false -- not configured differently. */}}
+            {{- if $xr.spec.database }}
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: SubnetGroup
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "db-subnets" }}
+                crossplane.io/external-name: {{ printf "%s-subnets" $dbName }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                description: Private subnets for {{ $dbName }}
+                {{/* Selects the shared platform network's private subnets.
+                     The network is NOT part of this XR: it outlives every
+                     service in it, so it is on a different lifecycle
+                     (Module 06 section 6). */}}
+                subnetIdSelector:
+                  matchLabels:
+                    tier: private
+                    environment: {{ $env }}
+              providerConfigRef:
+                name: {{ $ns }}
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: Instance
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "database" }}
+                {{/* Deterministic, derived from namespace + name. This is what
+                     makes disaster recovery possible: recreating the XR with
+                     the same identity re-ADOPTS the existing instance rather
+                     than creating a second one (Module 09 challenge task 4). */}}
+                crossplane.io/external-name: {{ $dbName }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                engine: postgres
+                engineVersion: "16.3"
+                instanceClass: {{ $class }}
+                allocatedStorage: {{ $storageGB }}
+                username: appuser
+                {{/* Generated by the provider. No human learns the value, so
+                     there is nothing to leak and nothing to rotate by hand. */}}
+                autoGeneratePassword: true
+                passwordSecretRef:
+                  namespace: crossplane-system
+                  name: {{ printf "%s-password" $dbName }}
+                  key: password
+                dbSubnetGroupNameSelector:
+                  matchControllerRef: true
+                publiclyAccessible: false
+                storageEncrypted: true
+                {{/* Three INDEPENDENT deletion controls at three layers, all on
+                     for prod and off for dev (Module 09 section 5). */}}
+                deletionProtection: {{ $isProd }}
+                skipFinalSnapshot: {{ not $isProd }}
+                {{- if $isProd }}
+                finalSnapshotIdentifier: {{ printf "%s-final" $dbName }}
+                backupRetentionPeriod: 30
+                multiAz: true
+                {{- end }}
+                tags:
+                  service: {{ $name }}
+                  team: {{ $ns }}
+                  environment: {{ $env }}
+              providerConfigRef:
+                name: {{ $ns }}
+              deletionPolicy: {{ if $isProd }}Orphan{{ else }}Delete{{ end }}
+              writeConnectionSecretToRef:
+                namespace: {{ $ns }}
+                name: {{ printf "%s-rds" $name }}
+            {{- end }}
+
+            {{/* ══════════════ STORAGE ══════════════ */}}
+            {{- if $xr.spec.storage }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  service: {{ $name }}
+                  team: {{ $ns }}
+                  environment: {{ $env }}
+              providerConfigRef:
+                name: {{ $ns }}
+              deletionPolicy: {{ if $isProd }}Orphan{{ else }}Delete{{ end }}
+            ---
+            {{/* NOT a field the developer can set, because they must not be
+                 able to forget it. */}}
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket-pab" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ $bucket }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+              providerConfigRef:
+                name: {{ $ns }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketServerSideEncryptionConfiguration
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket-encryption" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ $bucket }}
+                rule:
+                  - applyServerSideEncryptionByDefault:
+                      - sseAlgorithm: AES256
+              providerConfigRef:
+                name: {{ $ns }}
+
+            {{/* ══════════════ IDENTITY ══════════════
+                 IRSA-shaped: a role the service's ServiceAccount may assume,
+                 scoped to exactly the bucket this service created. No access
+                 key exists anywhere. */}}
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: Role
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "role" }}
+                crossplane.io/external-name: {{ $roleName }}
+            spec:
+              forProvider:
+                {{/* Caps what this role can EVER do, regardless of what is
+                     attached to it now or later (Module 08 section 7). */}}
+                permissionsBoundary: {{ printf "arn:aws:iam::%s:policy/ServiceBoundary" $accountId }}
+                {{/* The Condition pins the role to ONE ServiceAccount in ONE
+                     namespace. Without it, any pod in the cluster could assume
+                     it -- which turns per-workload identity back into
+                     cluster-wide identity. */}}
+                assumeRolePolicy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Principal": {
+                          "Federated": "arn:aws:iam::{{ $accountId }}:oidc-provider/{{ $oidcHost }}"
+                        },
+                        "Action": "sts:AssumeRoleWithWebIdentity",
+                        "Condition": {
+                          "StringEquals": {
+                            "{{ $oidcHost }}:sub": "system:serviceaccount:{{ $ns }}:{{ $name }}",
+                            "{{ $oidcHost }}:aud": "sts.amazonaws.com"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                tags:
+                  service: {{ $name }}
+                  team: {{ $ns }}
+              providerConfigRef:
+                name: {{ $ns }}
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: Policy
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "policy" }}
+                crossplane.io/external-name: {{ printf "%s-s3" $roleName }}
+            spec:
+              forProvider:
+                name: {{ printf "%s-s3" $roleName }}
+                {{/* TWO statements: object actions target bucket/*, ListBucket
+                     targets the bucket ITSELF. Getting this wrong gives an app
+                     that can fetch a known key and cannot list anything --
+                     a confusing failure (Module 08 section 3). */}}
+                policy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Sid": "Objects",
+                        "Effect": "Allow",
+                        "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+                        "Resource": "arn:aws:s3:::{{ $bucket }}/*"
+                      },
+                      {
+                        "Sid": "ListTheBucket",
+                        "Effect": "Allow",
+                        "Action": ["s3:ListBucket"],
+                        "Resource": "arn:aws:s3:::{{ $bucket }}"
+                      }
+                    ]
+                  }
+              providerConfigRef:
+                name: {{ $ns }}
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: RolePolicyAttachment
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "role-attachment" }}
+            spec:
+              forProvider:
+                roleSelector:
+                  matchControllerRef: true
+                policyArnSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: {{ $ns }}
+            {{- end }}
+
+            {{/* ══════════════ THE APPLICATION ══════════════
+                 Composed DIRECTLY. In Crossplane v1 this needed
+                 provider-kubernetes and an Object wrapper. */}}
+            ---
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "serviceaccount" }}
+                {{- if $xr.spec.storage }}
+                eks.amazonaws.com/role-arn: {{ printf "arn:aws:iam::%s:role/%s" $accountId $roleName }}
+                {{- end }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "deployment" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+              labels:
+                app: {{ $name }}
+                acme.io/service: {{ $name }}
+            spec:
+              replicas: {{ $replicas }}
+              selector:
+                matchLabels:
+                  app: {{ $name }}
+              template:
+                metadata:
+                  labels:
+                    app: {{ $name }}
+                spec:
+                  serviceAccountName: {{ $name }}
+                  {{- if $xr.spec.database }}
+                  {{/* An init container rather than function-sequencer: a Pod
+                       that LOGS what it is waiting for is more debuggable than
+                       a resource that was never created (Module 06 section 4). */}}
+                  initContainers:
+                    - name: wait-for-db
+                      image: busybox:1.36
+                      command:
+                        - sh
+                        - -c
+                        - |
+                          until nc -z "$DATABASE_HOST" "$DATABASE_PORT"; do
+                            echo "waiting for database at $DATABASE_HOST:$DATABASE_PORT..."
+                            sleep 3
+                          done
+                          echo "database is up"
+                      env:
+                        - name: DATABASE_HOST
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: DATABASE_HOST }
+                        - name: DATABASE_PORT
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: DATABASE_PORT }
+                  {{- end }}
+                  containers:
+                    - name: app
+                      image: {{ $xr.spec.image }}
+                      ports:
+                        - containerPort: 8080
+                      env:
+                        - name: APP_NAME
+                          value: {{ $name }}
+                        - name: ENVIRONMENT
+                          value: {{ $env }}
+                        {{- if $xr.spec.database }}
+                        {{/* THE SEAM FROM MODULE 01, DELETED. These come from
+                             the Secret the database wrote. No human, no ticket,
+                             no copy-paste. */}}
+                        - name: DATABASE_HOST
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: DATABASE_HOST }
+                        - name: DATABASE_PORT
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: DATABASE_PORT }
+                        - name: DATABASE_USER
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: DATABASE_USER }
+                        - name: DATABASE_PASSWORD
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: DATABASE_PASSWORD }
+                        {{- end }}
+                        {{- if $xr.spec.storage }}
+                        - name: BUCKET_NAME
+                          value: {{ $bucket }}
+                        - name: AWS_REGION
+                          value: {{ $region }}
+                        {{- end }}
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 64Mi
+                        limits:
+                          memory: 512Mi
+                      readinessProbe:
+                        httpGet: { path: /healthz, port: 8080 }
+                        initialDelaySeconds: 5
+                        periodSeconds: 5
+                      livenessProbe:
+                        httpGet: { path: /healthz, port: 8080 }
+                        initialDelaySeconds: 30
+                        periodSeconds: 20
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "k8s-service" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+            spec:
+              selector:
+                app: {{ $name }}
+              ports:
+                - port: 80
+                  targetPort: 8080
+
+            {{- if $xr.spec.host }}
+            ---
+            apiVersion: networking.k8s.io/v1
+            kind: Ingress
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "ingress" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+            spec:
+              ingressClassName: nginx
+              rules:
+                - host: {{ $xr.spec.host }}
+                  http:
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: {{ $name }}
+                            port: { number: 80 }
+            {{- end }}
+
+            {{/* ══════════════ STATUS ══════════════
+                 EVERY read of .observed.resources is guarded: on the first
+                 reconcile nothing exists yet, and one unguarded nil lookup
+                 fails the WHOLE render, creating nothing at all. */}}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: Service
+            status:
+              environment: {{ $env }}
+              {{- if $xr.spec.host }}
+              url: {{ printf "http://%s" $xr.spec.host }}
+              {{- end }}
+              {{- if $xr.spec.storage }}
+              bucketName: {{ $bucket }}
+              {{- end }}
+              {{- if $xr.spec.database }}
+              connectionSecret: {{ $connSecret }}
+              {{- $db := index .observed.resources "database" }}
+              {{- if $db }}
+              {{- $addr := dig "status" "atProvider" "address" "" $db.resource }}
+              {{- if $addr }}
+              databaseHost: {{ $addr }}
+              {{- end }}
+              {{- end }}
+              {{- end }}
+
+    # ── STEP 4: republish credentials under OUR key names ────────────
+    # This indirection is the platform's API contract. Applications depend on
+    # DATABASE_HOST, not on whatever the RDS provider happens to call things,
+    # so the implementation underneath can change freely (Module 09 section 4).
+    - step: connection-details
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: database
+            connectionDetails:
+              - type: FromConnectionSecretKey
+                name: DATABASE_PASSWORD
+                fromConnectionSecretKey: password
+              - type: FromConnectionSecretKey
+                name: DATABASE_USER
+                fromConnectionSecretKey: username
+              - type: FromFieldPath
+                name: DATABASE_HOST
+                fromFieldPath: status.atProvider.address
+              - type: FromFieldPath
+                name: DATABASE_PORT
+                fromFieldPath: status.atProvider.port
+              # A platform-wide default no cloud resource produced.
+              - type: FromValue
+                name: DATABASE_SSLMODE
+                value: require
+            # RDS reports Ready before it is connectable on real AWS. Wait for
+            # an address rather than trusting the instance's own condition.
+            readiness:
+              policy: NonEmpty
+              fieldPath: status.atProvider.address
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready

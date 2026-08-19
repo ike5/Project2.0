@@ -1,0 +1,114 @@
+# Two tenants. The environment label is what the composition reads, and
+# developers have no RBAC to patch namespace labels — so they cannot forge it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-payments
+  labels:
+    acme.io/tenant: payments
+    acme.io/environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-search
+  labels:
+    acme.io/tenant: search
+    acme.io/environment: dev
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+  namespace: team-payments
+spec:
+  hard:
+    count/services.platform.acme.io: "10"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+  namespace: team-search
+spec:
+  hard:
+    count/services.platform.acme.io: "10"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: developer
+  namespace: team-payments
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: developer
+  namespace: team-search
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-user
+  namespace: team-payments
+rules:
+  - apiGroups: ["platform.acme.io"]
+    resources: ["services"]
+    # No "delete" -- that is break-glass (Module 13).
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  # Read-only visibility for debugging their own stack.
+  - apiGroups: ["s3.aws.upbound.io", "rds.aws.upbound.io", "iam.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["", "apps", "networking.k8s.io"]
+    resources: ["pods", "pods/log", "events", "deployments", "services", "ingresses"]
+    verbs: ["get", "list", "watch"]
+#
+# ABSENT, DELIBERATELY: create on managed resources. A raw Bucket or Instance
+# bypasses encryption, public-access blocking, tagging, naming, IAM scoping and
+# deletion protection. THE PLATFORM API IS THE SECURITY BOUNDARY; direct
+# managed-resource access is a hole straight through it.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-user
+  namespace: team-search
+rules:
+  - apiGroups: ["platform.acme.io"]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["s3.aws.upbound.io", "rds.aws.upbound.io", "iam.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["", "apps", "networking.k8s.io"]
+    resources: ["pods", "pods/log", "events", "deployments", "services", "ingresses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-user
+  namespace: team-payments
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: platform-user }
+subjects:
+  - kind: ServiceAccount
+    name: developer
+    namespace: team-payments
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-user
+  namespace: team-search
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: platform-user }
+subjects:
+  - kind: ServiceAccount
+    name: developer
+    namespace: team-search

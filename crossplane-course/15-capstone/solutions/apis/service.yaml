@@ -1,0 +1,160 @@
+# The Service API — the capstone's public contract.
+#
+# DESIGN NOTES (the reasoning matters more than the YAML):
+#
+#   * There is no `instanceClass`, `engineVersion`, `region`, `cidrBlock`,
+#     `encryption`, or `backupRetention` field. Those are platform decisions.
+#     Every one we expose is a support burden and a way to misconfigure
+#     something, and none of them is a decision a product engineer wants to make.
+#
+#   * There is no `environment` field. A developer who can set it can request
+#     production behaviour from a dev namespace (Module 13, attack 7). The
+#     composition derives it from a namespace label they cannot patch.
+#
+#   * `size` is a t-shirt, not a machine type. It maps to an instance class AND
+#     a replica count AND a storage size. Changing that mapping later is a
+#     platform decision that needs no consumer change.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: services.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: Service
+    plural: services
+    shortNames:
+      - svc
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                image:
+                  description: The container image to run. Must be a pinned tag.
+                  type: string
+                  # Reject :latest at the API. An image tag that moves means a
+                  # Pod restart silently changes what is running.
+                  pattern: '^[a-zA-Z0-9./_-]+:[a-zA-Z0-9._-]+$'
+
+                size:
+                  description: >-
+                    How much service this is. The platform maps this to instance
+                    classes, replica counts and storage; you do not need to know
+                    what those are.
+                  type: string
+                  enum: [small, medium, large]
+                  default: small
+
+                database:
+                  description: >-
+                    Provision a private Postgres database. Credentials are
+                    generated and injected into your Pods automatically; you will
+                    never see the password.
+                  type: boolean
+                  default: false
+
+                storage:
+                  description: >-
+                    Provision a private S3 bucket, and an IAM role scoped to it.
+                    The bucket name is published in status.bucketName.
+                  type: boolean
+                  default: false
+
+                host:
+                  description: >-
+                    Hostname to route to this service. Omit for an internal-only
+                    service.
+                  type: string
+                  pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+
+                minReplicas:
+                  description: >-
+                    Override the replica count implied by `size`. Bounded so a
+                    typo cannot exhaust the cluster.
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+
+              required:
+                - image
+
+              x-kubernetes-validations:
+                # ── IMMUTABILITY: fields whose change would DESTROY DATA ──
+                #
+                # Without these, Crossplane accepts the change, discovers the
+                # field cannot be modified in place, and DELETES AND RECREATES
+                # the resource -- a total data loss, executed automatically,
+                # about a minute after kubectl apply. See Module 09 section 7.
+                #
+                # A rejected apply with a clear message beats a silent
+                # replacement, every time.
+                - rule: "self.database == oldSelf.database"
+                  message: >-
+                    `database` cannot be changed after creation. Turning it off
+                    would destroy the database and all its data; turning it on
+                    requires a new Service. Create a new Service instead.
+                - rule: "self.storage == oldSelf.storage"
+                  message: >-
+                    `storage` cannot be changed after creation. Turning it off
+                    would delete the bucket and its objects.
+                # Shrinking is what forces a replacement; growing is in-place.
+                - rule: >-
+                    self.size == oldSelf.size ||
+                    (oldSelf.size == 'small' && self.size in ['medium','large']) ||
+                    (oldSelf.size == 'medium' && self.size == 'large')
+                  message: >-
+                    `size` can only be increased. AWS cannot shrink allocated
+                    storage, so downsizing would force the database to be
+                    replaced and the data lost.
+
+            status:
+              type: object
+              properties:
+                url:
+                  description: Where this service is reachable, if `host` was set.
+                  type: string
+                bucketName:
+                  description: The real S3 bucket name, for use in your application.
+                  type: string
+                databaseHost:
+                  description: >-
+                    The database endpoint. The PASSWORD is deliberately absent --
+                    it reaches your Pods through a Secret and is never readable
+                    from this object.
+                  type: string
+                connectionSecret:
+                  description: The Secret holding this service's credentials.
+                  type: string
+                environment:
+                  description: Derived from your namespace. You cannot set it.
+                  type: string
+      additionalPrinterColumns:
+        - name: IMAGE
+          type: string
+          jsonPath: .spec.image
+        - name: SIZE
+          type: string
+          jsonPath: .spec.size
+        - name: DB
+          type: boolean
+          jsonPath: .spec.database
+        - name: ENV
+          type: string
+          jsonPath: .status.environment
+        - name: URL
+          type: string
+          jsonPath: .status.url
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status
+        - name: AGE
+          type: date
+          jsonPath: .metadata.creationTimestamp
