@@ -1,0 +1,19 @@
+# Four zones AND an audit bucket. Expect 10 composed resources
+# (4 buckets + 4 lifecycle configs + audit bucket + audit versioning).
+#
+# The composition YAML is IDENTICAL to the one that produced 4 resources.
+# That is the point of templating.
+apiVersion: platform.acme.io/v1alpha1
+kind: XDataLake
+metadata:
+  name: warehouse
+  namespace: team-data
+spec:
+  region: us-east-1
+  zones:
+    - us-east-1a
+    - us-east-1b
+    - us-east-1c
+    - us-east-1d
+  enableAudit: true
+  retentionDays: 365

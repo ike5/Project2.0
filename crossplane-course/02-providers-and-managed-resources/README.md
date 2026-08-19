@@ -231,7 +231,7 @@ Then: 👉 **[challenge.md](./challenge.md)**
 - [`provider-s3.yaml`](./manifests/provider-s3.yaml) — the S3 provider
 - [`provider-ec2.yaml`](./manifests/provider-ec2.yaml) — the EC2 provider
 - [`mrap.yaml`](./manifests/mrap.yaml) — a narrow activation policy
-- [`providerconfig.yaml`](./manifests/providerconfig.yaml) — LocalStack credentials
+- [`providerconfig.yaml`](./manifests/providerconfig.yaml) — emulator credentials and endpoint
 - [`bucket-full.yaml`](./manifests/bucket-full.yaml) — a bucket with versioning and encryption
 - [`bucket-broken.yaml`](./manifests/bucket-broken.yaml) — deliberately invalid
 

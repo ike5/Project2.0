@@ -42,21 +42,21 @@ compositionrevisions           comprev    apiextensions.crossplane.io/v1   false
 compositions                   comp       apiextensions.crossplane.io/v1   false   Composition
 ```
 
-## 3. LocalStack answers from inside the cluster
+## 3. The emulator answers from inside the cluster
 
 This matters because **the provider pod** makes the AWS calls, not your laptop.
 Testing from your laptop would prove nothing.
 
 ```bash
 kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl:8.10.1 -- \
-  -s http://localstack.localstack.svc.cluster.local:4566/_localstack/health
+  -s http://moto.aws-local.svc.cluster.local:5000/moto-api/
 ```
 ✅ Expected: a JSON blob listing services, each `"available"` or `"running"`:
 ```json
 {"services": {"s3": "available", "iam": "available", "sts": "available", ...}}
 ```
 
-> ❌ If this times out, LocalStack isn't ready. `kubectl get pods -n localstack`
+> ❌ If this times out, the emulator isn't ready. `kubectl get pods -n aws-local`
 > and wait for `1/1 Running`.
 
 ## 4. Install the AWS S3 provider
@@ -93,7 +93,7 @@ kubectl api-resources --api-group=s3.aws.upbound.io | head
 
 ## 5. Give the provider credentials and an endpoint
 
-LocalStack accepts any credentials, so these are deliberately fake.
+moto accepts any credentials, so these are deliberately fake.
 
 ```bash
 kubectl create secret generic aws-creds \
@@ -114,13 +114,13 @@ spec:
       namespace: crossplane-system
       name: aws-creds
       key: creds
-  # Point the AWS SDK at LocalStack instead of amazonaws.com.
+  # Point the AWS SDK at the local emulator instead of amazonaws.com.
   endpoint:
     hostnameImmutable: true
     url:
       type: Static
-      static: http://localstack.localstack.svc.cluster.local:4566
-  # LocalStack doesn't implement these checks; skip them.
+      static: http://moto.aws-local.svc.cluster.local:5000
+  # The emulator doesn't implement these checks; skip them.
   skip_credentials_validation: true
   skip_metadata_api_check: true
   skip_requesting_account_id: true
@@ -130,10 +130,10 @@ YAML
 ```
 ✅ Expected: `secret/aws-creds created` and `providerconfig.aws.upbound.io/default created`.
 
-> `s3_use_path_style: true` is the LocalStack-specific bit. Real S3 uses
-> virtual-host addressing (`my-bucket.s3.amazonaws.com`); LocalStack serves
+> `s3_use_path_style: true` is the emulator-specific bit. Real S3 uses
+> virtual-host addressing (`my-bucket.s3.amazonaws.com`); The emulator serves
 > everything from one hostname, so buckets must appear in the *path*
-> (`localstack:4566/my-bucket`). Get this wrong and buckets fail with DNS errors.
+> (`moto:5000/my-bucket`). Get this wrong and buckets fail with DNS errors.
 
 ## 6. Provision a bucket — the real test
 
@@ -178,7 +178,7 @@ kubectl run awscli --rm -it --restart=Never \
   --env=AWS_ACCESS_KEY_ID=test \
   --env=AWS_SECRET_ACCESS_KEY=test \
   --env=AWS_DEFAULT_REGION=us-east-1 \
-  -- --endpoint-url=http://localstack.localstack.svc.cluster.local:4566 s3 ls
+  -- --endpoint-url=http://moto.aws-local.svc.cluster.local:5000 s3 ls
 ```
 ✅ Expected: your bucket, listed by the actual AWS CLI:
 ```
@@ -207,7 +207,7 @@ picks up exactly here.
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Provider never goes `Healthy` | Image pull is slow or blocked | `kubectl describe provider provider-aws-s3` → read Events |
-| Bucket `SYNCED=False` | Provider can't reach LocalStack | Re-run step 3; check the endpoint URL in your ProviderConfig for typos |
+| Bucket `SYNCED=False` | Provider can't reach the emulator | Re-run step 3; check the endpoint URL in your ProviderConfig for typos |
 | Bucket `SYNCED=True`, `READY=False` | AWS accepted the call but the resource isn't ready | `kubectl describe bucket <name>` → read Events and Conditions |
 | `no matches for kind "Bucket"` | Provider CRDs aren't installed yet | Wait for the provider to be `Healthy`, then retry |
 | `InvalidClientTokenId` / signature errors | Credential Secret is malformed | The `creds` key must be INI format, including the `[default]` line |

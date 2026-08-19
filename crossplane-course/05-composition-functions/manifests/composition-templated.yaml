@@ -1,0 +1,126 @@
+# The same job as Module 04's composition, but with loops and conditionals.
+#
+# Read the template alongside the XRD: `zones` is a list of any length, and
+# `enableAudit` makes a resource exist or not exist. Neither is expressible in
+# patch-and-transform.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xdatalake-templated
+  labels:
+    style: templated
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XDataLake
+  mode: Pipeline
+  pipeline:
+    - step: render-buckets
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := $xr.spec.region | default "us-east-1" -}}
+
+            {{/* ---- ONE BUCKET PER ZONE: the loop patch-and-transform can't do ---- */}}
+            {{- range $i, $zone := $xr.spec.zones }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{/*
+                  The resource name MUST be stable across renders. It is keyed to
+                  the zone name, so adding a zone to the list adds a bucket and
+                  leaves existing ones untouched. Keying it to $i would mean that
+                  REMOVING a zone from the middle of the list renames every
+                  subsequent bucket -- which Crossplane implements as delete and
+                  recreate. That would destroy data.
+                */}}
+                {{ setResourceNameAnnotation (printf "bucket-%s" $zone) }}
+                crossplane.io/external-name: {{ printf "%s-%s-%s" $ns $name $zone }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  zone: {{ $zone }}
+                  datalake: {{ $name }}
+                  team: {{ $ns }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketLifecycleConfiguration
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "lifecycle-%s" $zone) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ printf "%s-%s-%s" $ns $name $zone }}
+                rule:
+                  - id: retention
+                    status: Enabled
+                    expiration:
+                      - days: {{ $xr.spec.retentionDays | default 30 }}
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* ---- CONDITIONAL RESOURCE: exists only when asked for ---- */}}
+            {{- if $xr.spec.enableAudit }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket-audit" }}
+                crossplane.io/external-name: {{ printf "%s-%s-audit" $ns $name }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  purpose: audit
+                  datalake: {{ $name }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketVersioning
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "versioning-audit" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ printf "%s-%s-audit" $ns $name }}
+                versioningConfiguration:
+                  status: Enabled
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* ---- COMPUTED STATUS: values derived, not copied ---- */}}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XDataLake
+            status:
+              bucketCount: {{ len $xr.spec.zones }}
+              zoneBuckets:
+              {{- range $zone := $xr.spec.zones }}
+                - {{ printf "%s-%s-%s" $ns $name $zone }}
+              {{- end }}
+              {{- if $xr.spec.enableAudit }}
+              auditBucket: {{ printf "%s-%s-audit" $ns $name }}
+              {{- end }}
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready

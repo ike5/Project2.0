@@ -1,0 +1,14 @@
+# Two zones, no audit bucket. Expect 4 composed resources
+# (2 buckets + 2 lifecycle configurations).
+apiVersion: platform.acme.io/v1alpha1
+kind: XDataLake
+metadata:
+  name: analytics
+  namespace: team-data
+spec:
+  region: us-east-1
+  zones:
+    - us-east-1a
+    - us-east-1b
+  enableAudit: false
+  retentionDays: 30

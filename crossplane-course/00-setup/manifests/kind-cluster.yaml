@@ -1,6 +1,6 @@
 # A 3-node kind cluster for the Crossplane course.
 #
-# Why 3 nodes? Crossplane itself, the provider pods, LocalStack, and (from Module 14)
+# Why 3 nodes? Crossplane itself, the provider pods, the AWS emulator, and (from Module 14)
 # Argo CD add up. Spreading them over workers keeps any one node from thrashing, and
 # lets you see real scheduling behaviour when a provider pod restarts.
 #

@@ -1,0 +1,15 @@
+# The XR to render. Edit `zones` and `enableAudit`, re-run `crossplane render`,
+# and watch the output change -- in about three seconds, with no cluster.
+apiVersion: platform.acme.io/v1alpha1
+kind: XDataLake
+metadata:
+  name: render-test
+  namespace: team-data
+spec:
+  region: us-east-1
+  zones:
+    - us-east-1a
+    - us-east-1b
+    - us-east-1c
+  enableAudit: true
+  retentionDays: 90

@@ -1,0 +1,78 @@
+# An API deliberately designed to be IMPOSSIBLE with patch-and-transform alone.
+#
+# `zones` is a list of arbitrary length -- you cannot write a fixed set of
+# resource blocks for it. `enableAudit` is a boolean that should cause a resource
+# to exist or not exist, not merely to have a different value.
+#
+# Both requirements need a real templating language.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xdatalakes.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XDataLake
+    plural: xdatalakes
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                region:
+                  type: string
+                  default: us-east-1
+                zones:
+                  description: >-
+                    One bucket is created per zone. The list may hold any number
+                    of entries, which is exactly why this needs a loop.
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 10
+                enableAudit:
+                  description: >-
+                    When true, an additional audit bucket with versioning is
+                    created. When false it must not exist AT ALL -- not merely
+                    exist in a different configuration.
+                  type: boolean
+                  default: false
+                retentionDays:
+                  type: integer
+                  default: 30
+                  minimum: 1
+                  maximum: 3650
+              required:
+                - zones
+            status:
+              type: object
+              properties:
+                bucketCount:
+                  type: integer
+                zoneBuckets:
+                  type: array
+                  items:
+                    type: string
+                auditBucket:
+                  type: string
+      additionalPrinterColumns:
+        - name: ZONES
+          type: string
+          jsonPath: .spec.zones
+        - name: AUDIT
+          type: boolean
+          jsonPath: .spec.enableAudit
+        - name: BUCKETS
+          type: integer
+          jsonPath: .status.bucketCount
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

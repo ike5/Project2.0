@@ -1,0 +1,88 @@
+# Templating AND patching in one pipeline -- the idiomatic production shape.
+#
+# Step 1 templates the parts that VARY (a bucket per zone).
+# Step 2 patches the parts that are UNIFORM (tags every resource must carry).
+#
+# Doing the uniform tagging in the template would mean repeating it in every
+# rendered block. Doing the loop in patch-and-transform is impossible. Use each
+# function for what it is good at.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xdatalake-hybrid
+  labels:
+    style: hybrid
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XDataLake
+  mode: Pipeline
+  pipeline:
+    # ---- STEP 1: template the variable structure ----
+    - step: render-buckets
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- range $zone := $xr.spec.zones }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "bucket-%s" $zone) }}
+                crossplane.io/external-name: {{ printf "%s-%s-%s" $ns $name $zone }}
+            spec:
+              forProvider:
+                region: {{ $xr.spec.region | default "us-east-1" }}
+                tags:
+                  zone: {{ $zone }}
+              providerConfigRef:
+                name: default
+            {{- end }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XDataLake
+            status:
+              bucketCount: {{ len $xr.spec.zones }}
+
+    # ---- STEP 2: patch a uniform concern across resources ----
+    # This step RECEIVES what step 1 produced and modifies it. Note the resource
+    # names must match the setResourceNameAnnotation values from the template.
+    - step: add-common-tags
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        # Patch resources that already exist in the desired state rather than
+        # creating new ones.
+        patchSets:
+          - name: common-tags
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.namespace
+                toFieldPath: spec.forProvider.tags.team
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.tags.datalake
+        resources:
+          - name: bucket-us-east-1a
+            patches:
+              - type: PatchSet
+                patchSetName: common-tags
+          - name: bucket-us-east-1b
+            patches:
+              - type: PatchSet
+                patchSetName: common-tags
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready

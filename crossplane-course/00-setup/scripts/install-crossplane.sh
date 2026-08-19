@@ -41,4 +41,4 @@ echo
 echo "✅ It installed these core APIs:"
 kubectl api-resources --api-group=apiextensions.crossplane.io
 echo
-echo "Next: ./scripts/install-localstack.sh"
+echo "Next: ./scripts/install-aws-emulator.sh"

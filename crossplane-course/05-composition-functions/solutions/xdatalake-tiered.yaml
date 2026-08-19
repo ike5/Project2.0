@@ -1,0 +1,136 @@
+# Challenge 05 Tasks 2-4 — tiered zones, computed cost, selective readiness.
+#
+# Apply the XRD change alongside this; see solution.md for the schema.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xdatalake-tiered
+  labels:
+    style: tiered
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XDataLake
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := $xr.spec.region | default "us-east-1" -}}
+
+            {{- range $zone := $xr.spec.zones }}
+            {{/*
+              Note: `=` not `:=`. Using := here would declare a NEW variable
+              scoped to the if-block, and the outer $retention would keep its
+              original value -- a silent, confusing Go template bug.
+            */}}
+            {{- $retention := 365 }}
+            {{- if eq $zone.tier "hot" }}{{ $retention = 7 }}{{ end }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "bucket-%s" $zone.name) }}
+                crossplane.io/external-name: {{ printf "%s-%s-%s" $ns $name $zone.name }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  tier: {{ $zone.tier }}
+                  team: {{ $ns }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketLifecycleConfiguration
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "lifecycle-%s" $zone.name) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ printf "%s-%s-%s" $ns $name $zone.name }}
+                rule:
+                  - id: retention
+                    status: Enabled
+                    expiration:
+                      - days: {{ $retention }}
+              providerConfigRef:
+                name: default
+            {{- if eq $zone.tier "hot" }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketVersioning
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "versioning-%s" $zone.name) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ printf "%s-%s-%s" $ns $name $zone.name }}
+                versioningConfiguration:
+                  status: Enabled
+              providerConfigRef:
+                name: default
+            {{- end }}
+            {{- end }}
+
+            {{- if $xr.spec.enableAudit }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket-audit" }}
+                crossplane.io/external-name: {{ printf "%s-%s-audit" $ns $name }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  purpose: audit
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* Task 3: computed cost. See solution.md for why this is a
+                 questionable thing to do in a template. */}}
+            {{- $hot := 0 }}{{- $cold := 0 }}
+            {{- range $z := $xr.spec.zones }}
+              {{- if eq $z.tier "hot" }}{{ $hot = add1 $hot }}{{ else }}{{ $cold = add1 $cold }}{{ end }}
+            {{- end }}
+            {{- $cost := add (mul $hot 5) $cold }}
+            {{- if $xr.spec.enableAudit }}{{ $cost = add $cost 10 }}{{ end }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XDataLake
+            status:
+              bucketCount: {{ len $xr.spec.zones }}
+              estimatedMonthlyCost: {{ printf "$%.2f" (float64 $cost) | quote }}
+
+    # Task 4: the audit bucket must not hold up the XR's readiness.
+    # policy: None means "never blocks Ready" -- and also means failures here
+    # are invisible in the XR status, so monitor it separately (Module 12).
+    - step: readiness-overrides
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: bucket-audit
+            readiness:
+              policy: None
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready

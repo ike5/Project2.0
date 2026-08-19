@@ -11,7 +11,7 @@ both and watch only one heal itself. ⏱️ ~45 min.
 ## Part A — Set up a shell helper
 
 You'll query "AWS" constantly. Define this function in your shell (it runs the real
-AWS CLI in a throwaway Pod, pointed at LocalStack):
+AWS CLI in a throwaway Pod, pointed at the emulator):
 
 ```bash
 awslocal() {
@@ -20,7 +20,7 @@ awslocal() {
     --env=AWS_ACCESS_KEY_ID=test \
     --env=AWS_SECRET_ACCESS_KEY=test \
     --env=AWS_DEFAULT_REGION=us-east-1 \
-    -- --endpoint-url=http://localstack.localstack.svc.cluster.local:4566 "$@"
+    -- --endpoint-url=http://moto.aws-local.svc.cluster.local:5000 "$@"
 }
 ```
 
@@ -28,7 +28,7 @@ Test it:
 ```bash
 awslocal s3 ls
 ```
-✅ Expected: no output (no buckets yet), and no error. If you get an error, LocalStack
+✅ Expected: no output (no buckets yet), and no error. If you get an error, the emulator
 isn't reachable — revisit `VERIFY.md` step 3.
 
 ## Part B — The imperative way

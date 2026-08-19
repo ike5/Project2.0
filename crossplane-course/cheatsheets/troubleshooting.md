@@ -104,11 +104,11 @@ kubectl logs -n crossplane-system -l pkg.crossplane.io/provider=provider-aws-s3 
 | Error text | Cause | Fix |
 |------------|-------|-----|
 | `InvalidClientTokenId`, `SignatureDoesNotMatch` | Bad or malformed credentials | The Secret's key must be INI format, `[default]` line included |
-| `no such host`, `connection refused` | Endpoint unreachable | Check the `ProviderConfig` endpoint URL; from a Pod, curl LocalStack's health path |
+| `no such host`, `connection refused` | Endpoint unreachable | Check the `ProviderConfig` endpoint URL; from a Pod, curl the emulator health path |
 | `AccessDenied`, `UnauthorizedOperation` | Real IAM problem | The role/user lacks the action. Read which action the message names |
 | `cannot find ProviderConfig` | Typo'd or missing `providerConfigRef` | `kubectl get providerconfigs` |
 | `ValidationError`, `InvalidParameterValue` | Your `forProvider` is wrong | The message names the field. Check the provider's CRD: `kubectl explain bucket.spec.forProvider` |
-| `BucketAlreadyExists` | S3 names are globally unique | Add a suffix. Real AWS is far stricter than LocalStack here |
+| `BucketAlreadyExists` | S3 names are globally unique | Add a suffix. Real AWS is far stricter than the emulator here |
 | `DependencyViolation` | Deleting something still in use | Delete children first, or use `Usage` to order it (Module 10) |
 
 ### The provider itself is unhealthy
@@ -204,8 +204,8 @@ kubectl annotate bucket my-bucket reconcile-trigger="$(date +%s)" --overwrite
 kubectl rollout restart deploy -n crossplane-system \
   -l pkg.crossplane.io/provider=provider-aws-s3
 
-# 4. Reset "AWS" entirely (LocalStack only — instant clean slate)
-kubectl rollout restart deploy/localstack -n localstack
+# 4. Reset "AWS" entirely — instant clean slate
+kubectl rollout restart deploy/moto -n aws-local
 
 # 5. Burn it down (all state is in git, so this is cheap)
 00-setup/scripts/delete-cluster.sh && 00-setup/scripts/create-cluster.sh

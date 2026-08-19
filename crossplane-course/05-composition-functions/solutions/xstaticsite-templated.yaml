@@ -1,0 +1,128 @@
+# Challenge 05 Task 1 — XStaticSite rewritten with Go templating.
+#
+# Compare with 04-xrds-and-compositions/solutions/xstaticsite-composition.yaml.
+# The regexp transform is gone, the always-present Deny policy is gone, and the
+# intent is readable: `{{ if $xr.spec.public }}`.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xstaticsite-templated
+  labels:
+    provider: aws
+    style: templated
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XStaticSite
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $region := $xr.spec.region | default "us-east-1" -}}
+            {{- $bucket := printf "%s-%s" $xr.metadata.namespace $xr.metadata.name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  team: {{ $xr.metadata.namespace }}
+                  public: {{ $xr.spec.public | quote }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketWebsiteConfiguration
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "website" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ $bucket }}
+                indexDocument:
+                  - suffix: {{ $xr.spec.indexDocument | default "index.html" }}
+                errorDocument:
+                  - key: {{ $xr.spec.errorDocument | default "error.html" }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-access-block" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ $bucket }}
+                # Readable at a glance -- no convert-then-map gymnastics.
+                blockPublicPolicy: {{ not $xr.spec.public }}
+                restrictPublicBuckets: {{ not $xr.spec.public }}
+                # ACLs stay blocked either way; we grant access by POLICY, which
+                # is the modern S3 approach.
+                blockPublicAcls: true
+                ignorePublicAcls: true
+              providerConfigRef:
+                name: default
+
+            {{/*
+              THE POINT OF THIS FILE: when public is false, this resource is not
+              rendered at all. No Deny policy sitting around confusing the next
+              person to read the account.
+            */}}
+            {{- if $xr.spec.public }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPolicy
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "policy" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ $bucket }}
+                policy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Sid": "PublicReadGetObject",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "s3:GetObject",
+                        "Resource": "arn:aws:s3:::{{ $bucket }}/*"
+                      }
+                    ]
+                  }
+              providerConfigRef:
+                name: default
+            {{- end }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XStaticSite
+            status:
+              bucketName: {{ $bucket }}
+              {{- $b := index .observed.resources "bucket" }}
+              {{- if $b }}
+              {{- $ep := dig "status" "atProvider" "websiteEndpoint" "" $b.resource }}
+              {{- if $ep }}
+              url: {{ printf "http://%s" $ep }}
+              {{- end }}
+              {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

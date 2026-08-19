@@ -16,7 +16,7 @@ spec:
     hostnameImmutable: true
     url:
       type: Static
-      static: http://localstack.localstack.svc.cluster.local:4566
+      static: http://moto.aws-local.svc.cluster.local:5000
   skip_credentials_validation: true
   skip_metadata_api_check: true
   skip_requesting_account_id: true

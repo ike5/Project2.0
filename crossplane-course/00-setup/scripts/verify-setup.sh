@@ -45,14 +45,14 @@ check "Composition CRD installed" \
   kubectl get crd compositions.apiextensions.crossplane.io
 
 echo
-echo "☁️  LocalStack"
-check "localstack deployment Available" \
-  kubectl wait --for=condition=Available deployment/localstack -n localstack --timeout=10s
+echo "☁️  AWS emulator (moto)"
+check "moto deployment Available" \
+  kubectl wait --for=condition=Available deployment/moto -n aws-local --timeout=10s
 if kubectl run xp-verify-curl --rm -i --restart=Never --image=curlimages/curl:8.10.1 --quiet -- \
-     -sf http://localstack.localstack.svc.cluster.local:4566/_localstack/health >/dev/null 2>&1; then
-  echo "  ✅ LocalStack health endpoint answers from inside the cluster"
+     -sf http://moto.aws-local.svc.cluster.local:5000/moto-api/ >/dev/null 2>&1; then
+  echo "  ✅ emulator health endpoint answers from inside the cluster"
 else
-  echo "  ❌ LocalStack health endpoint unreachable from inside the cluster"
+  echo "  ❌ emulator health endpoint unreachable from inside the cluster"
   fail=1
 fi
 

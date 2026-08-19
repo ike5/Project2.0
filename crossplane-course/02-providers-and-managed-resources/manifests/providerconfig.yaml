@@ -14,21 +14,21 @@ spec:
       name: aws-creds
       key: creds
 
-  # Send AWS SDK calls to LocalStack instead of amazonaws.com.
+  # Send AWS SDK calls to the local emulator instead of amazonaws.com.
   # Delete this whole block to talk to real AWS.
   endpoint:
     hostnameImmutable: true
     url:
       type: Static
-      static: http://localstack.localstack.svc.cluster.local:4566
+      static: http://moto.aws-local.svc.cluster.local:5000
 
-  # LocalStack doesn't implement these preflight checks. All four are
-  # LocalStack-only and must be removed for real AWS.
+  # The emulator doesn't implement these preflight checks. All four are
+  # emulator-only and must be removed for real AWS.
   skip_credentials_validation: true
   skip_metadata_api_check: true
   skip_requesting_account_id: true
   skip_region_validation: true
 
-  # LocalStack serves every bucket from one hostname, so the bucket name must be
+  # The emulator serves every bucket from one hostname, so the bucket name must be
   # in the URL path. Real S3 uses virtual-host style (bucket.s3.amazonaws.com).
   s3_use_path_style: true

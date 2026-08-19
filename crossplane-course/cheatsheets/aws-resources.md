@@ -105,7 +105,7 @@ Related resources — S3 configuration is split across many objects:
 
 > **Gotchas**
 > - Bucket names are **globally unique across all of AWS**. Always append a suffix in
->   compositions. LocalStack doesn't enforce this — real AWS does, loudly.
+>   compositions. The emulator doesn't enforce this — real AWS does, loudly.
 > - A non-empty bucket **refuses to delete**. Expect stuck finalizers if you wrote
 >   objects into it.
 > - `BucketVersioning` and friends reference the bucket via `bucketRef.name`.
@@ -183,7 +183,7 @@ spec:
 >   (`|`) and keep valid JSON inside.
 > - IAM is eventually consistent. A role can exist but not yet be usable for a few
 >   seconds — expect brief `Ready=False` flapping on first creation.
-> - LocalStack accepts nearly any policy without evaluating it. **Real AWS enforces
+> - moto accepts nearly any policy without evaluating it. **Real AWS enforces
 >   them.** Don't assume a policy is correct because a lab passed.
 
 ---
@@ -231,7 +231,7 @@ spec:
 > - `SubnetGroup` requires subnets in **at least two availability zones**, even for a
 >   single-AZ instance. This is the #1 RDS composition failure.
 > - Real RDS takes **5–15 minutes** to become available. Don't assume your composition
->   is broken because `Ready=False` after two minutes. LocalStack fakes it instantly,
+>   is broken because `Ready=False` after two minutes. moto fakes it instantly,
 >   which is convenient but sets a false expectation.
 > - `skipFinalSnapshot: true` is fine for labs and dangerous in production — it means
 >   deletion destroys the data with no backup.
@@ -264,7 +264,7 @@ spec:
 
 | Source | Use when | Security |
 |--------|----------|----------|
-| `Secret` | Local dev, LocalStack | ⚠️ Static long-lived keys |
+| `Secret` | Local dev, local emulator | ⚠️ Static long-lived keys |
 | `IRSA` | Crossplane runs on EKS | ✅ Best on EKS — no stored keys |
 | `WebIdentity` | Any OIDC-capable cluster | ✅ No stored keys |
 | `Upbound` / `InjectedIdentity` | Managed control planes / node role | ✅ Depends on setup |
@@ -293,7 +293,7 @@ spec:
 
 ---
 
-## The LocalStack ProviderConfig (this course)
+## The emulator ProviderConfig (this course)
 
 ```yaml
 apiVersion: aws.upbound.io/v1beta1
@@ -308,7 +308,7 @@ spec:
     hostnameImmutable: true
     url:
       type: Static
-      static: http://localstack.localstack.svc.cluster.local:4566
+      static: http://moto.aws-local.svc.cluster.local:5000
   skip_credentials_validation: true
   skip_metadata_api_check: true
   skip_requesting_account_id: true
@@ -322,18 +322,41 @@ else in any manifest changes. That's the whole point.
 
 ---
 
-## Where LocalStack differs from real AWS
+## Where the emulator differs from real AWS
 
 Know these so you don't learn the wrong lesson:
 
-| Behaviour | LocalStack | Real AWS |
-|-----------|-----------|----------|
-| IAM policy enforcement | Mostly ignored | Strictly enforced |
-| S3 global name uniqueness | Not enforced | Enforced |
+| Behaviour | moto (local) | Real AWS |
+|-----------|--------------|----------|
+| IAM policy enforcement | **Not enforced** — any policy is accepted and never evaluated | Strictly enforced |
+| S3 global name uniqueness | Not enforced | Enforced across all accounts |
 | RDS provisioning time | Instant | 5–15 minutes |
-| Eventual consistency | Rare | Common — expect retries |
+| Eventual consistency | Never — writes are immediately visible | Common; expect retries and transient `NotFound` |
 | Service quotas | None | Real, and you will hit them |
-| Cost | $0 | Not $0 — NAT Gateways especially |
+| Deletion protection / dependencies | Loosely modelled | Strict (`DependencyViolation` is real) |
+| State durability | In-memory; lost when the pod restarts | Permanent |
+| Cost | $0 | Not $0 — NAT Gateways and RDS especially |
 
-Everything the course teaches transfers. These are the places to double-check before
-running a composition against a real account for the first time.
+**The two that matter most:**
+
+1. **IAM is not enforced.** Module 08's policies are syntactically real and correct,
+   but the emulator will happily accept a policy that real AWS would reject — and,
+   worse, it will let an action succeed that a correct policy would deny. **Never
+   conclude "my IAM works" from a passing lab.** Test permissions against a real
+   account before trusting them.
+2. **There is no eventual consistency.** On real AWS a resource can be created and
+   then briefly not found by the next call. Compositions that work locally can flap
+   on real AWS for this reason. This is why Module 05 insists you guard every
+   cross-resource read — locally the guard looks unnecessary, and on real AWS it is
+   the difference between converging and not.
+
+Everything else the course teaches transfers directly. These are the places to
+double-check before running a composition against a real account for the first time.
+
+**Resetting the emulator** is instant and is the fastest way out of a broken lab:
+```bash
+kubectl rollout restart deploy/moto -n aws-local
+```
+All emulated AWS state is discarded. Your Crossplane objects remain, and the
+reconcile loop rebuilds everything within a minute or two — which is itself a nice
+demonstration of drift correction at scale.

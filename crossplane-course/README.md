@@ -23,11 +23,14 @@ entirely on your laptop, for free.
   plane. By Module 15 you ship a self-service API where a developer writes 12 lines
   of YAML and gets a VPC-attached Postgres, an S3 bucket, a scoped IAM role, and a
   running app — with credentials wired in automatically.
-- **Real AWS APIs, no AWS bill.** We run [LocalStack](https://localstack.cloud/)
-  *inside* your kind cluster. The provider makes genuine AWS API calls to
-  `s3.amazonaws.com`-shaped endpoints — you just point them somewhere free. Every
-  manifest you write is the same YAML you'd apply against a real account, and
-  Module 08 shows you exactly what changes when you do.
+- **Real AWS APIs, no AWS bill, no signup.** We run
+  [moto](https://github.com/getmoto/moto) — Apache-2.0, no account, no auth token —
+  *inside* your kind cluster. The provider makes genuine AWS SDK calls; you simply
+  point them at a free endpoint. Every manifest you write is byte-for-byte what
+  you'd apply against a real account, and Module 08 shows you the single object that
+  changes when you switch. (We use moto rather than the more famous LocalStack
+  because LocalStack's free tier no longer covers EC2 or RDS. Module 00 explains how
+  to swap if you have a licence.)
 - **Crossplane v2, not v1 muscle memory.** Namespaced composite resources,
   composition **functions** (the only mode there is now), Managed Resource
   Activation Policies, and Operations. Most tutorials online still teach the v1
@@ -91,7 +94,7 @@ entirely on your laptop, for free.
 ## Prerequisites
 
 - A Mac (Apple Silicon or Intel) or Linux box with **~10 GB RAM free** and ~30 GB disk.
-  Crossplane plus a provider plus LocalStack is heavier than the Kubernetes course.
+  Crossplane plus a provider plus the AWS emulator is heavier than the Kubernetes course.
 - **Kubernetes fundamentals.** You should be comfortable with `kubectl`, Deployments,
   Services, Secrets, and — importantly — **CRDs and controllers**. Module 01 refreshes
   the controller mental model but does not teach Kubernetes from scratch.
@@ -109,7 +112,7 @@ plane you build accumulates.
 
 | # | Module | You'll learn to… | Est. time |
 |---|--------|------------------|-----------|
-| 00 | [Setup & Orientation](./00-setup/) | Install Crossplane + LocalStack on a kind cluster | 1 h |
+| 00 | [Setup & Orientation](./00-setup/) | Install Crossplane + the AWS emulator on a kind cluster | 1 h |
 | 01 | [Control-Plane Thinking](./01-control-plane-thinking/) | Explain *why* a control plane beats a `terraform apply` pipeline | 1.5 h |
 | 02 | [Providers & Managed Resources](./02-providers-and-managed-resources/) | Install a provider, configure it, `kubectl apply` an S3 bucket | 2.5 h |
 | 03 | [Managed Resource Lifecycle](./03-managed-resource-lifecycle/) | Drift correction, management/deletion policies, importing existing infra | 2.5 h |
@@ -211,9 +214,9 @@ attempt `challenge.md` solo → check `solutions/`.
 cd crossplane-course/00-setup
 ./scripts/create-cluster.sh        # kind cluster: xp-course
 
-# 2. Install Crossplane + LocalStack + the AWS provider
+# 2. Install Crossplane + the AWS emulator + the AWS provider
 ./scripts/install-crossplane.sh
-./scripts/install-localstack.sh
+./scripts/install-aws-emulator.sh
 
 # 3. Confirm everything is healthy
 ./scripts/verify-setup.sh

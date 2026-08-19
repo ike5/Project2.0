@@ -130,7 +130,7 @@ kubectl get providerconfigs
 ```
 ✅ Expected: `default` listed.
 
-Read the file and note what's LocalStack-specific:
+Read the file and note what's emulator-specific:
 ```bash
 cat manifests/providerconfig.yaml
 ```

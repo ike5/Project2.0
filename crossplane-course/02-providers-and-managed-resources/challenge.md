@@ -5,7 +5,7 @@ Solutions in [`solutions/`](./solutions/). Try first.
 ## Tasks
 
 1. **A second account.** Real platforms manage more than one AWS account. Create a
-   *second* `ProviderConfig` named `sandbox` (point it at the same LocalStack — the
+   *second* `ProviderConfig` named `sandbox` (point it at the same emulator — the
    mechanism is what matters, not the isolation). Then provision two buckets, one
    through each config, and prove from the objects themselves which config each used.
    Finally, explain what happens to a resource whose `providerConfigRef` names a

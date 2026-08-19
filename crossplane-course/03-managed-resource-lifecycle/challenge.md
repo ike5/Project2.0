@@ -20,7 +20,7 @@ awslocal s3api put-bucket-tagging --bucket acme-prod-uploads \
 kubectl run seed --rm -i --restart=Never -q --image=amazon/aws-cli:2.18.9 \
   --env=AWS_ACCESS_KEY_ID=test --env=AWS_SECRET_ACCESS_KEY=test \
   --env=AWS_DEFAULT_REGION=us-east-1 --command -- sh -c \
-  'echo backup-data | aws --endpoint-url=http://localstack.localstack.svc.cluster.local:4566 s3 cp - s3://acme-prod-backups/jan.bak'
+  'echo backup-data | aws --endpoint-url=http://moto.aws-local.svc.cluster.local:5000 s3 cp - s3://acme-prod-backups/jan.bak'
 ```
 
 ## Tasks

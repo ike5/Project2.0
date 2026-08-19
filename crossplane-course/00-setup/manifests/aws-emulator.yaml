@@ -1,0 +1,89 @@
+# A local emulator of the AWS APIs, so this course costs nothing to run.
+#
+# We use moto (https://github.com/getmoto/moto) -- Apache-2.0 licensed, a decade
+# old, and it emulates every service this course needs including EC2/VPC, IAM,
+# RDS, S3 and DynamoDB.
+#
+# WHY NOT LOCALSTACK? LocalStack is the better-known option and you will see it in
+# most Crossplane blog posts. Its free tier no longer covers EC2, RDS or
+# ElastiCache, and its distribution now requires an account and auth token. Moto
+# keeps this course genuinely free and account-free. If you have a LocalStack
+# licence, see 00-setup/README.md -- swapping is a two-line change.
+#
+# It runs INSIDE the cluster because the PROVIDER POD makes the AWS API calls,
+# not your laptop. It needs a DNS name reachable from a Pod.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aws-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moto
+  namespace: aws-local
+  labels:
+    app: moto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moto
+  template:
+    metadata:
+      labels:
+        app: moto
+    spec:
+      containers:
+        - name: moto
+          image: motoserver/moto:5.0.28
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            # Moto server mode routes ALL services through one port, dispatching
+            # on the request's signature. No per-service configuration needed.
+            - name: MOTO_PORT
+              value: "5000"
+            # Give IAM roles realistic ARNs so the IAM labs in Module 08 behave
+            # the way they would against a real account.
+            - name: MOTO_ACCOUNT_ID
+              value: "123456789012"
+          readinessProbe:
+            httpGet:
+              path: /moto-api/
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /moto-api/
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moto
+  namespace: aws-local
+spec:
+  selector:
+    app: moto
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+# In-cluster endpoint (you will use this constantly):
+#   http://moto.aws-local.svc.cluster.local:5000
+#
+# State lives in the pod's memory. Deleting the pod resets "AWS" to empty, which
+# is a FEATURE: it is the fastest way to reset a broken lab.
+#   kubectl rollout restart deploy/moto -n aws-local

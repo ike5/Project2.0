@@ -212,7 +212,7 @@ awslocal s3 cp /tmp/data.txt s3://stuck-bucket/data.txt 2>/dev/null || \
   kubectl run s3put --rm -i --restart=Never -q --image=amazon/aws-cli:2.18.9 \
     --env=AWS_ACCESS_KEY_ID=test --env=AWS_SECRET_ACCESS_KEY=test \
     --env=AWS_DEFAULT_REGION=us-east-1 \
-    --command -- sh -c 'echo important | aws --endpoint-url=http://localstack.localstack.svc.cluster.local:4566 s3 cp - s3://stuck-bucket/data.txt'
+    --command -- sh -c 'echo important | aws --endpoint-url=http://moto.aws-local.svc.cluster.local:5000 s3 cp - s3://stuck-bucket/data.txt'
 ```
 
 Now try to delete it:
@@ -238,7 +238,7 @@ containing `BucketNotEmpty` or similar.
 kubectl run s3rm --rm -i --restart=Never -q --image=amazon/aws-cli:2.18.9 \
   --env=AWS_ACCESS_KEY_ID=test --env=AWS_SECRET_ACCESS_KEY=test \
   --env=AWS_DEFAULT_REGION=us-east-1 \
-  -- --endpoint-url=http://localstack.localstack.svc.cluster.local:4566 \
+  -- --endpoint-url=http://moto.aws-local.svc.cluster.local:5000 \
      s3 rm s3://stuck-bucket --recursive
 sleep 60
 kubectl get buckets

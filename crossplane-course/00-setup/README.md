@@ -18,21 +18,30 @@ or equivalent comfort with `kubectl`, Deployments, and CRDs.
 | **helm** | Kubernetes package manager | The official way to install Crossplane |
 | **crossplane CLI** | Crossplane's own tool | `render`, `validate`, `trace`, and building packages |
 | **Crossplane** | The control plane itself | The thing this course is about |
-| **LocalStack** | A local emulator of the AWS APIs | Real AWS API calls, zero dollars, no account |
+| **moto** | A local emulator of the AWS APIs | Real AWS API calls, zero dollars, no account |
 
-> **Why LocalStack instead of a real AWS account?**
+> **Why an emulator instead of a real AWS account?**
 > The Crossplane AWS provider talks to AWS through the ordinary AWS SDK. Every
-> request has an *endpoint*, and that endpoint is configurable. Point it at
-> LocalStack and the provider genuinely doesn't know the difference — it builds the
+> request has an *endpoint*, and that endpoint is configurable. Point it at a local
+> emulator and the provider genuinely doesn't know the difference — it builds the
 > same requests, signs them the same way, and parses the same responses.
 >
 > That means **every manifest in this course is exactly what you'd apply against a
 > real account.** Module 08 shows you the one object you change (a `ProviderConfig`)
 > to switch to real AWS, and how to do it safely.
 >
-> LocalStack's free tier emulates the services we need (S3, EC2/VPC, IAM, STS, RDS,
-> DynamoDB) faithfully enough to teach every concept. Where its behaviour differs
-> from real AWS in a way that matters, the labs say so explicitly.
+> **Why moto rather than LocalStack?** LocalStack is better known and you'll see it
+> in most Crossplane blog posts. But its free tier no longer covers EC2, RDS, or
+> ElastiCache, and its distribution now requires an account and an auth token — which
+> breaks this course's promise that everything runs free with no signup.
+> [moto](https://github.com/getmoto/moto) is Apache-2.0, a decade old, and emulates
+> every service we need: S3, EC2/VPC, IAM, STS, RDS, and DynamoDB.
+>
+> If you already have a LocalStack licence and prefer it, swapping is a two-line
+> change — see *Using LocalStack instead* at the bottom of this file. Where the
+> emulator's behaviour differs from real AWS in a way that matters, the labs say so
+> explicitly, and
+> [cheatsheets/aws-resources.md](../cheatsheets/aws-resources.md) has the full list.
 
 ---
 
@@ -59,7 +68,7 @@ crossplane version --client
 ✅ Expected: each prints a version. The Crossplane CLI should report **v2.x**.
 
 > **Give Docker enough headroom.** Docker Desktop → Settings → Resources:
-> **CPUs ≥ 4**, **Memory ≥ 8 GB**. Crossplane + a provider + LocalStack is a
+> **CPUs ≥ 4**, **Memory ≥ 8 GB**. Crossplane + a provider + the emulator is a
 > heavier footprint than the Kubernetes course used. If pods start getting
 > `OOMKilled` or evicted later, this is the first thing to check.
 
@@ -101,14 +110,14 @@ crossplane-rbac-manager-6b8f7d4c9-mn4tz  1/1     Running   0          45s
 here — providers, functions, your own APIs — arrives as Kubernetes objects that these
 pods reconcile.
 
-## Step 4 — Install LocalStack
+## Step 4 — Install the AWS emulator
 
 ```bash
-./scripts/install-localstack.sh
+./scripts/install-aws-emulator.sh
 ```
-✅ Expected: `deployment.apps/localstack condition met`, and a Service on port 4566.
+✅ Expected: `deployment.apps/moto condition met`, and a Service on port 5000.
 
-The first run pulls a ~1 GB image, so give it a few minutes.
+The first run pulls the image, so give it a minute or two.
 
 ## Step 5 — Verify everything
 
@@ -119,7 +128,7 @@ The first run pulls a ~1 GB image, so give it a few minutes.
 
 Then run the fuller smoke test in [../VERIFY.md](../VERIFY.md), which actually
 provisions an S3 bucket end to end. **Do not skip it** — it proves the provider can
-reach LocalStack, which is the single most common thing to have subtly wrong.
+reach the emulator, which is the single most common thing to have subtly wrong.
 
 ---
 
@@ -141,7 +150,7 @@ flowchart TB
 
     api <-->|watch + update status| core
     api <-->|watch + update status| prov
-    prov -->|AWS SDK calls| ls[(LocalStack<br/>or real AWS)]
+    prov -->|AWS SDK calls| ls[(moto<br/>or real AWS)]
 
     core -. installs CRDs for .-> prov
 ```
@@ -186,7 +195,7 @@ Full definitions in [../GLOSSARY.md](../GLOSSARY.md).
 ```bash
 00-setup/scripts/create-cluster.sh      # start of session
 00-setup/scripts/install-crossplane.sh  # (idempotent — safe to re-run)
-00-setup/scripts/install-localstack.sh
+00-setup/scripts/install-aws-emulator.sh
 00-setup/scripts/delete-cluster.sh      # end of session — frees your RAM
 ```
 
@@ -204,8 +213,8 @@ legitimate and fast fix.
   Raise it to 8 GB and re-run `./scripts/delete-cluster.sh && ./scripts/create-cluster.sh`.
 - **Crossplane pods `CrashLoopBackOff`** → check `kubectl logs -n crossplane-system deploy/crossplane`.
   On a fresh cluster this is nearly always resource pressure.
-- **LocalStack stuck `0/1 Running`** → it's still pulling or still booting its
-  services. `kubectl logs -n localstack deploy/localstack` shows a `Ready.` line when
+- **Emulator pod stuck `0/1 Running`** → it's still pulling or still booting its
+  services. `kubectl logs -n aws-local deploy/moto` shows a `Ready.` line when
   it's finished. The readiness probe allows ~2.5 minutes; a slow connection may need
   a second attempt.
 - **`crossplane: command not found`** → the install script drops the binary in your
@@ -213,6 +222,27 @@ legitimate and fast fix.
 - **`kubectl` points at the wrong cluster** → `kubectl config use-context kind-xp-course`.
 
 More in [../cheatsheets/troubleshooting.md](../cheatsheets/troubleshooting.md).
+
+---
+
+## Using LocalStack instead (optional)
+
+If you have a LocalStack licence and would rather use it, only two things change.
+
+1. Deploy LocalStack in the `aws-local` namespace with a Service named `moto` on
+   port 5000 (so no other file needs editing), or deploy it under its own names and
+   update the endpoint in Step 5 of [../VERIFY.md](../VERIFY.md).
+2. In every `ProviderConfig`, point `endpoint.url.static` at it:
+   ```yaml
+   endpoint:
+     hostnameImmutable: true
+     url:
+       type: Static
+       static: http://localstack.localstack.svc.cluster.local:4566
+   ```
+
+Everything else in the course — every manifest, every composition — is unchanged.
+That is the point of keeping the endpoint in one object.
 
 ---
 

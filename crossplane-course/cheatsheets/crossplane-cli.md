@@ -143,7 +143,7 @@ awslocal() {
     --env=AWS_ACCESS_KEY_ID=test \
     --env=AWS_SECRET_ACCESS_KEY=test \
     --env=AWS_DEFAULT_REGION=us-east-1 \
-    -- --endpoint-url=http://localstack.localstack.svc.cluster.local:4566 "$@"
+    -- --endpoint-url=http://moto.aws-local.svc.cluster.local:5000 "$@"
 }
 
 awslocal s3 ls
