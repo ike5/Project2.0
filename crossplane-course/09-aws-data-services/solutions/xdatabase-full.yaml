@@ -1,0 +1,200 @@
+# Challenge 09 Tasks 1 and 5 — XDatabase with read replicas and multi-engine
+# support.
+#
+# Task 5's conclusion is that multi-engine in ONE composition is usually the
+# wrong call; this file exists to show the mechanics AND to let you see the
+# conditionals piling up. Count the `if eq $engine` branches and decide for
+# yourself whether two label-selected compositions would read better.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xdatabase-aws-full
+  labels:
+    provider: aws
+    tier: full
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XDatabase
+  writeConnectionSecretsToNamespace: crossplane-system
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $env := $xr.spec.environment | default "dev" -}}
+            {{- $dbName := printf "%s-%s" $ns $name -}}
+            {{- $isProd := eq $env "prod" -}}
+            {{- $replicas := $xr.spec.readReplicas | default 0 -}}
+
+            {{- $class := "db.t3.micro" -}}
+            {{- if eq $xr.spec.size "medium" }}{{ $class = "db.t3.small" }}{{ end -}}
+            {{- if eq $xr.spec.size "large" }}{{ $class = "db.r6g.large" }}{{ end -}}
+
+            {{/* ---- Task 5: engine-specific values ---- */}}
+            {{- $engine := $xr.spec.engine | default "postgres" -}}
+            {{- $version := "16.3" -}}
+            {{- $port := 5432 -}}
+            {{- if eq $engine "mysql" -}}
+              {{- $version = "8.0" -}}
+              {{- $port = 3306 -}}
+            {{- end -}}
+
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: SubnetGroup
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "subnet-group" }}
+                crossplane.io/external-name: {{ printf "%s-subnets" $dbName }}
+            spec:
+              forProvider:
+                region: us-east-1
+                description: Private subnets for {{ $dbName }}
+                subnetIdSelector:
+                  matchLabels:
+                    tier: private
+                    network: {{ $xr.spec.networkRef }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: Instance
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "instance" }}
+                crossplane.io/external-name: {{ $dbName }}
+            spec:
+              forProvider:
+                region: us-east-1
+                engine: {{ $engine }}
+                engineVersion: {{ $version | quote }}
+                instanceClass: {{ $class }}
+                allocatedStorage: {{ $xr.spec.storageGB | default 20 }}
+                username: appuser
+                autoGeneratePassword: true
+                passwordSecretRef:
+                  namespace: crossplane-system
+                  name: {{ printf "%s-password" $dbName }}
+                  key: password
+                dbSubnetGroupNameSelector:
+                  matchControllerRef: true
+                publiclyAccessible: false
+                storageEncrypted: true
+                deletionProtection: {{ $isProd }}
+                skipFinalSnapshot: {{ not $isProd }}
+                {{- if $isProd }}
+                finalSnapshotIdentifier: {{ printf "%s-final" $dbName }}
+                backupRetentionPeriod: 30
+                multiAz: true
+                {{- end }}
+                tags:
+                  team: {{ $ns }}
+                  environment: {{ $env }}
+              providerConfigRef:
+                name: default
+              deletionPolicy: {{ if $isProd }}Orphan{{ else }}Delete{{ end }}
+              writeConnectionSecretToRef:
+                namespace: {{ $ns }}
+                name: {{ printf "%s-rds-conn" $name }}
+
+            {{/* ---- Task 1: read replicas ----
+                 A replica INHERITS engine, version, storage and credentials from
+                 its source. Setting them here is an error, not redundancy.
+
+                 No sequencer is needed: AWS rejects the create until the primary
+                 is available, the resource reports Synced=False, and it retries.
+                 Convergence handles the ordering, exactly as in Module 07. */}}
+            {{- range $i := until $replicas }}
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: Instance
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "replica-%d" $i) }}
+                crossplane.io/external-name: {{ printf "%s-replica-%d" $dbName $i }}
+            spec:
+              forProvider:
+                region: us-east-1
+                instanceClass: {{ $class }}
+                replicateSourceDb: {{ $dbName }}
+                publiclyAccessible: false
+                skipFinalSnapshot: true
+                tags:
+                  team: {{ $ns }}
+                  role: read-replica
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XDatabase
+            status:
+              connectionSecret: {{ printf "%s-conn" $name }}
+              {{- $primary := index .observed.resources "instance" }}
+              {{- if $primary }}
+              {{- $addr := dig "status" "atProvider" "address" "" $primary.resource }}
+              {{- if $addr }}
+              host: {{ $addr }}
+              port: {{ $port }}
+              {{- end }}
+              {{- end }}
+
+    - step: connection-details
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: instance
+            connectionDetails:
+              - type: FromConnectionSecretKey
+                name: DATABASE_PASSWORD
+                fromConnectionSecretKey: password
+              - type: FromConnectionSecretKey
+                name: DATABASE_USER
+                fromConnectionSecretKey: username
+              - type: FromFieldPath
+                name: DATABASE_HOST
+                fromFieldPath: status.atProvider.address
+              - type: FromFieldPath
+                name: DATABASE_PORT
+                fromFieldPath: status.atProvider.port
+              - type: FromValue
+                name: DATABASE_SSLMODE
+                value: require
+              # Task 2: the URL cannot be assembled here -- connectionDetails
+              # can only COPY values, and the generated password is deliberately
+              # not visible to composition functions. Publish the components and
+              # let the application (or a sidecar reading the mounted Secret)
+              # build the URL. See solution.md.
+            readiness:
+              policy: NonEmpty
+              fieldPath: status.atProvider.address
+
+          # Task 1: read traffic goes to replica-0 when it exists. The primary's
+          # DATABASE_HOST remains the write endpoint.
+          - name: replica-0
+            connectionDetails:
+              - type: FromFieldPath
+                name: DATABASE_READ_HOST
+                fromFieldPath: status.atProvider.address
+            # A replica must never block the XR becoming Ready -- the database
+            # is usable without it. See Module 05 on the cost of policy: None.
+            readiness:
+              policy: None
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready

@@ -1,0 +1,97 @@
+# XDatabase — a database API a developer can use without knowing RDS.
+#
+# The interesting part is the x-kubernetes-validations block: it makes
+# replacement-triggering fields IMMUTABLE, so a change that would silently
+# destroy the data is rejected at kubectl apply with a clear message.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xdatabases.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XDatabase
+    plural: xdatabases
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                engine:
+                  description: >-
+                    Database engine. IMMUTABLE -- changing it would force AWS to
+                    replace the instance, destroying all data.
+                  type: string
+                  enum: [postgres, mysql]
+                  default: postgres
+                size:
+                  description: >-
+                    T-shirt sizing. The platform maps this to an instance class,
+                    so developers never see db.t3.micro.
+                  type: string
+                  enum: [small, medium, large]
+                  default: small
+                storageGB:
+                  description: >-
+                    Allocated storage. Can only ever be INCREASED -- AWS rejects
+                    shrinking, and a naive retry loop on that rejection is how
+                    people end up replacing an instance.
+                  type: integer
+                  default: 20
+                  minimum: 20
+                  maximum: 1000
+                environment:
+                  type: string
+                  enum: [dev, staging, prod]
+                  default: dev
+                networkRef:
+                  description: The XNetwork whose private subnets host this database.
+                  type: string
+              required:
+                - networkRef
+              x-kubernetes-validations:
+                # oldSelf is the previous version of this object. These rules
+                # fire only on UPDATE, and they turn a silently destructive
+                # change into a clear rejection.
+                - rule: "self.engine == oldSelf.engine"
+                  message: "engine is immutable: changing it would destroy all data"
+                - rule: "self.storageGB >= oldSelf.storageGB"
+                  message: "storageGB can only be increased; AWS cannot shrink storage"
+                - rule: "self.environment == oldSelf.environment"
+                  message: "environment is immutable: create a new database instead"
+                # Production databases must be big enough to matter.
+                - rule: "self.environment != 'prod' || self.size != 'small'"
+                  message: "prod databases may not use the small size"
+            status:
+              type: object
+              properties:
+                host:
+                  type: string
+                port:
+                  type: integer
+                connectionSecret:
+                  description: The Secret holding this database's credentials.
+                  type: string
+      additionalPrinterColumns:
+        - name: ENGINE
+          type: string
+          jsonPath: .spec.engine
+        - name: SIZE
+          type: string
+          jsonPath: .spec.size
+        - name: ENV
+          type: string
+          jsonPath: .spec.environment
+        - name: HOST
+          type: string
+          jsonPath: .status.host
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

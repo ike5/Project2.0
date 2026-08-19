@@ -1,0 +1,17 @@
+# A developer asking for a database. Four lines.
+#
+# No engine version, no instance class, no subnet group, no password, no
+# security group, no backup policy. The platform decides all of it, and the
+# XRD's validation rules stop the developer making a change that would silently
+# destroy the data.
+apiVersion: platform.acme.io/v1alpha1
+kind: XDatabase
+metadata:
+  name: payments-db
+  namespace: team-payments
+spec:
+  engine: postgres
+  size: small
+  storageGB: 20
+  environment: dev
+  networkRef: payments-net

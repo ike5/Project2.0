@@ -1,0 +1,62 @@
+# A Postgres instance as raw managed resources, so you see everything a
+# composition will later hide.
+#
+# Note the ORDER of dependency: the subnet group needs subnets, which need a
+# VPC. Apply this only after Module 07's XNetwork exists, or adjust the
+# selectors to match your own network.
+apiVersion: rds.aws.upbound.io/v1beta1
+kind: SubnetGroup
+metadata:
+  name: raw-db-subnets
+spec:
+  forProvider:
+    region: us-east-1
+    description: Subnets available to the raw RDS lab instance
+    # AWS REQUIRES SUBNETS IN AT LEAST TWO AVAILABILITY ZONES, even for a
+    # single-AZ instance. A one-AZ subnet group is the single most common RDS
+    # composition failure, and the error message does not make the cause
+    # obvious.
+    subnetIdSelector:
+      matchLabels:
+        tier: private
+  providerConfigRef:
+    name: default
+---
+apiVersion: rds.aws.upbound.io/v1beta1
+kind: Instance
+metadata:
+  name: raw-postgres
+spec:
+  forProvider:
+    region: us-east-1
+    engine: postgres
+    engineVersion: "16.3"
+    instanceClass: db.t3.micro
+    allocatedStorage: 20
+    username: appuser
+
+    # THE PASSWORD IS NEVER WRITTEN DOWN. The provider generates a random one,
+    # stores it in the Secret named here, and uses it. No human learns the
+    # value, so there is nothing to leak and nothing to rotate by hand.
+    autoGeneratePassword: true
+    passwordSecretRef:
+      namespace: crossplane-system
+      name: raw-postgres-password
+      key: password
+
+    dbSubnetGroupNameRef:
+      name: raw-db-subnets
+    publiclyAccessible: false
+
+    # LAB CONVENIENCE ONLY. In production set this to false and provide a
+    # finalSnapshotIdentifier -- otherwise deleting the instance destroys the
+    # data with no recovery path.
+    skipFinalSnapshot: true
+
+  providerConfigRef:
+    name: default
+
+  # Everything the application needs to connect, written to a Secret.
+  writeConnectionSecretToRef:
+    namespace: team-payments
+    name: raw-postgres-conn

@@ -1,0 +1,59 @@
+# An application consuming the database, using the platform's stable contract.
+#
+# Note what this Deployment does NOT know: which cloud, which engine version,
+# which instance class, or the password. It knows the key names your platform
+# promised, and nothing else. That is what makes the implementation swappable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-consumer
+  namespace: team-payments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-consumer
+  template:
+    metadata:
+      labels:
+        app: payments-consumer
+    spec:
+      containers:
+        - name: app
+          image: postgres:16-alpine
+          # Prove the credentials arrived by attempting a real connection.
+          command:
+            - sh
+            - -c
+            - |
+              echo "connecting to $DATABASE_HOST:$DATABASE_PORT as $DATABASE_USER"
+              echo "password length: ${#DATABASE_PASSWORD}"
+              until pg_isready -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER"; do
+                echo "waiting for database..."
+                sleep 5
+              done
+              echo "database is reachable"
+              sleep 3600
+          env:
+            # Every one of these comes from the XR's connection secret --
+            # the LEVEL 2 contract, not the RDS instance's raw keys.
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: payments-db-conn
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: payments-db-conn
+                  key: DATABASE_PORT
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: payments-db-conn
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payments-db-conn
+                  key: DATABASE_PASSWORD

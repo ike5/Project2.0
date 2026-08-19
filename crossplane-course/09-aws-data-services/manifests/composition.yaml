@@ -1,0 +1,177 @@
+# XDatabase — Postgres in a private network, with a CURATED connection secret.
+#
+# The key idea is the two levels of connection detail:
+#   Level 1: the RDS Instance writes what IT knows (endpoint, port, password)
+#   Level 2: this composition republishes a stable, platform-owned contract
+#            (DATABASE_HOST, DATABASE_URL, ...) that applications consume.
+#
+# Level 2 is what lets you swap RDS for Aurora, or AWS for GCP, without
+# touching a single application.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xdatabase-aws
+  labels:
+    provider: aws
+    engine: postgres
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XDatabase
+
+  # The XR's own connection secret. Applications consume THIS, never the
+  # RDS instance's raw one.
+  writeConnectionSecretsToNamespace: crossplane-system
+
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $env := $xr.spec.environment | default "dev" -}}
+            {{- $dbName := printf "%s-%s" $ns $name -}}
+
+            {{/* Developer intent -> instance class. They never see db.t3.micro. */}}
+            {{- $class := "db.t3.micro" -}}
+            {{- if eq $xr.spec.size "medium" }}{{ $class = "db.t3.small" }}{{ end -}}
+            {{- if eq $xr.spec.size "large" }}{{ $class = "db.r6g.large" }}{{ end -}}
+
+            {{/* Production gets every protection; dev stays disposable. */}}
+            {{- $isProd := eq $env "prod" -}}
+
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: SubnetGroup
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "subnet-group" }}
+                crossplane.io/external-name: {{ printf "%s-subnets" $dbName }}
+            spec:
+              forProvider:
+                region: us-east-1
+                description: Private subnets for {{ $dbName }}
+                {{/*
+                  Selects the PRIVATE subnets of the referenced XNetwork. That
+                  network defaults to two availability zones, which is not a
+                  nicety: AWS rejects a subnet group spanning fewer than two AZs
+                  even for a single-AZ instance.
+                */}}
+                subnetIdSelector:
+                  matchLabels:
+                    tier: private
+                    network: {{ $xr.spec.networkRef }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: Instance
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "instance" }}
+                crossplane.io/external-name: {{ $dbName }}
+            spec:
+              forProvider:
+                region: us-east-1
+                engine: {{ $xr.spec.engine | default "postgres" }}
+                engineVersion: {{ if eq ($xr.spec.engine | default "postgres") "mysql" }}"8.0"{{ else }}"16.3"{{ end }}
+                instanceClass: {{ $class }}
+                allocatedStorage: {{ $xr.spec.storageGB | default 20 }}
+                username: appuser
+
+                # Generated, never typed, never seen.
+                autoGeneratePassword: true
+                passwordSecretRef:
+                  namespace: crossplane-system
+                  name: {{ printf "%s-password" $dbName }}
+                  key: password
+
+                dbSubnetGroupNameSelector:
+                  matchControllerRef: true
+                # Never reachable from the internet. There is no field to make
+                # this configurable, deliberately.
+                publiclyAccessible: false
+                storageEncrypted: true
+
+                {{/* THREE INDEPENDENT DELETION CONTROLS, at three layers.
+                     See README section 5. */}}
+                deletionProtection: {{ $isProd }}
+                skipFinalSnapshot: {{ not $isProd }}
+                {{- if $isProd }}
+                finalSnapshotIdentifier: {{ printf "%s-final" $dbName }}
+                backupRetentionPeriod: 30
+                multiAz: true
+                {{- end }}
+
+                tags:
+                  team: {{ $ns }}
+                  environment: {{ $env }}
+              providerConfigRef:
+                name: default
+              # Crossplane's own layer of deletion protection, independent of
+              # AWS's deletionProtection above.
+              deletionPolicy: {{ if $isProd }}Orphan{{ else }}Delete{{ end }}
+              writeConnectionSecretToRef:
+                namespace: {{ $ns }}
+                name: {{ printf "%s-rds-conn" $name }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XDatabase
+            status:
+              connectionSecret: {{ printf "%s-conn" $name }}
+              {{- $inst := index .observed.resources "instance" }}
+              {{- if $inst }}
+              {{- $ep := dig "status" "atProvider" "address" "" $inst.resource }}
+              {{- if $ep }}
+              host: {{ $ep }}
+              port: 5432
+              {{- end }}
+              {{- end }}
+
+    # ---- LEVEL 2: republish a stable, platform-owned contract ----
+    #
+    # These key names are YOUR platform's API. Applications depend on
+    # DATABASE_HOST, not on whatever the RDS provider happens to call things,
+    # so the implementation underneath can change freely.
+    - step: connection-details
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: instance
+            connectionDetails:
+              - type: FromConnectionSecretKey
+                name: DATABASE_PASSWORD
+                fromConnectionSecretKey: password
+              - type: FromConnectionSecretKey
+                name: DATABASE_USER
+                fromConnectionSecretKey: username
+              - type: FromFieldPath
+                name: DATABASE_HOST
+                fromFieldPath: status.atProvider.address
+              - type: FromFieldPath
+                name: DATABASE_PORT
+                fromFieldPath: status.atProvider.port
+              - type: FromValue
+                name: DATABASE_SSLMODE
+                value: require
+            # RDS reports Ready long before it is actually connectable on real
+            # AWS. Wait for an address to exist rather than trusting the
+            # instance's own condition.
+            readiness:
+              policy: NonEmpty
+              fieldPath: status.atProvider.address
+
+    - step: ready
+      functionRef:
+        name: function-auto-ready
