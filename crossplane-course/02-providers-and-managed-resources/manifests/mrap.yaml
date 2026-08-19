@@ -1,0 +1,32 @@
+# A ManagedResourceActivationPolicy: activate only the resource types this course
+# actually uses.
+#
+# Providers ship hundreds of managed resource definitions (MRDs). Each activated MRD
+# becomes a real CRD, and every CRD costs API-server memory and provider watch
+# overhead. Narrowing this list is one of the highest-value tuning changes available
+# on a real platform.
+#
+# Note: this REPLACES the default catch-all policy's effect for these providers.
+# Anything not matched here stays installed-but-inert, and applying a manifest for
+# an inactive kind fails with "no matches for kind".
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: course-resources
+spec:
+  activate:
+    # S3 — what we use in Modules 02-06
+    - buckets.s3.aws.upbound.io
+    - bucketversionings.s3.aws.upbound.io
+    - bucketserversideencryptionconfigurations.s3.aws.upbound.io
+    - bucketpublicaccessblocks.s3.aws.upbound.io
+    - bucketpolicies.s3.aws.upbound.io
+    # EC2 networking — Module 07. Wildcards are allowed.
+    - vpcs.ec2.aws.upbound.io
+    - subnets.ec2.aws.upbound.io
+    - internetgateways.ec2.aws.upbound.io
+    - routetables.ec2.aws.upbound.io
+    - routes.ec2.aws.upbound.io
+    - routetableassociations.ec2.aws.upbound.io
+    - securitygroups.ec2.aws.upbound.io
+    - securitygrouprules.ec2.aws.upbound.io

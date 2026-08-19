@@ -1,0 +1,13 @@
+# The AWS S3 provider.
+#
+# Installing this adds Bucket, BucketPolicy, BucketVersioning (etc.) to your
+# cluster's API, and runs a controller pod that reconciles them against S3.
+#
+# The tag is pinned deliberately. A provider that upgrades itself is a provider
+# that changes how your infrastructure reconciles at a moment you didn't choose.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-s3
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-s3:v1.21.0

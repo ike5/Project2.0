@@ -1,0 +1,69 @@
+# A bucket configured the way you'd actually want one in production.
+#
+# Note that S3 settings are spread across SEVERAL managed resources rather than
+# living on the Bucket itself. This mirrors how the AWS API is shaped, and it is
+# exactly the kind of tedium a Composition (Module 04) exists to hide.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: app-data
+  labels:
+    course-module: "02"
+spec:
+  forProvider:
+    region: us-east-1
+    # Declaring tags means Crossplane RECONCILES them: add one by hand in the
+    # console and it will be removed. Undeclared fields are left alone.
+    tags:
+      owner: platform-team
+      environment: lab
+  providerConfigRef:
+    name: default
+---
+# Versioning is its own resource, pointing back at the bucket by object name.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketVersioning
+metadata:
+  name: app-data-versioning
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: app-data          # a Kubernetes object name, not an S3 bucket name
+    versioningConfiguration:
+      status: Enabled
+  providerConfigRef:
+    name: default
+---
+# Encryption at rest.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketServerSideEncryptionConfiguration
+metadata:
+  name: app-data-encryption
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: app-data
+    rule:
+      - applyServerSideEncryptionByDefault:
+          - sseAlgorithm: AES256
+  providerConfigRef:
+    name: default
+---
+# Block all public access. On real AWS, always set this.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPublicAccessBlock
+metadata:
+  name: app-data-pab
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: app-data
+    blockPublicAcls: true
+    blockPublicPolicy: true
+    ignorePublicAcls: true
+    restrictPublicBuckets: true
+  providerConfigRef:
+    name: default

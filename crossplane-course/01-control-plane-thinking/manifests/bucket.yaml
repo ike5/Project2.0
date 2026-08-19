@@ -1,0 +1,13 @@
+# The same bucket as `aws s3 mb`, expressed as desired state.
+#
+# The difference isn't the bucket — it's that a controller now watches this
+# declaration forever and corrects reality whenever it diverges.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: declared-bucket
+spec:
+  forProvider:
+    region: us-east-1
+  providerConfigRef:
+    name: default

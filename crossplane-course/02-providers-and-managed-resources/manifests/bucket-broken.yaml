@@ -1,0 +1,14 @@
+# DELIBERATELY BROKEN — used in lab.md Part F to practise reading errors.
+#
+# The region is not a real AWS region. The provider will accept the object
+# (it is schema-valid) but the API call will fail, giving you a resource stuck
+# at Synced=False. Learning to read that failure is the point.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: broken-bucket
+spec:
+  forProvider:
+    region: mars-central-1
+  providerConfigRef:
+    name: default

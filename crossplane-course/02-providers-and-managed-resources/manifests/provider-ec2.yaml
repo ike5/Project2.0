@@ -1,0 +1,10 @@
+# The AWS EC2 provider — VPCs, subnets, security groups, and ~300 other kinds.
+#
+# This one is a good demonstration of why MRAP exists: you almost certainly want
+# a handful of these types, not all of them.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-ec2
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-ec2:v1.21.0
