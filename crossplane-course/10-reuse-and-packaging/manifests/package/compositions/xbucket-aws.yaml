@@ -1,0 +1,96 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbucket-aws
+  labels:
+    provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XBucket
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $bucket := printf "%s-%s" $ns $name -}}
+            {{- $isProd := eq $xr.spec.environment "prod" -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{/*
+                  RESOURCE NAMES ARE PART OF THIS PACKAGE'S PUBLIC API, even
+                  though consumers never see them. Renaming this in a future
+                  version deletes and recreates the bucket for every existing
+                  XR. Treat a rename as a MAJOR version bump.
+                */}}
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: us-east-1
+                tags:
+                  environment: {{ $xr.spec.environment }}
+                  team: {{ $ns }}
+              providerConfigRef:
+                name: default
+              deletionPolicy: {{ if $isProd }}Orphan{{ else }}Delete{{ end }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-access-block" }}
+            spec:
+              forProvider:
+                region: us-east-1
+                bucket: {{ $bucket }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketLifecycleConfiguration
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "lifecycle" }}
+            spec:
+              forProvider:
+                region: us-east-1
+                bucket: {{ $bucket }}
+                rule:
+                  - id: retention
+                    status: Enabled
+                    expiration:
+                      - days: {{ $xr.spec.retentionDays | default 30 }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XBucket
+            status:
+              bucketName: {{ $bucket }}
+              {{- $b := index .observed.resources "bucket" }}
+              {{- if $b }}
+              {{- $arn := dig "status" "atProvider" "arn" "" $b.resource }}
+              {{- if $arn }}
+              bucketArn: {{ $arn }}
+              {{- end }}
+              {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

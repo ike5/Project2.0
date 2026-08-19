@@ -1,0 +1,22 @@
+# Deletion BLOCKING: omit `by`, and nothing may delete the resource at all.
+#
+# This is different from deletionPolicy: Orphan.
+#   Orphan  -> the Kubernetes object is deleted; the cloud resource survives.
+#   Usage   -> the Kubernetes object CANNOT BE DELETED. The request is rejected.
+#
+# Removing the protection is a separate, auditable act:
+#   kubectl delete usage protect-production-data
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: protect-production-data
+spec:
+  of:
+    apiVersion: s3.aws.upbound.io/v1beta1
+    kind: Bucket
+    resourceRef:
+      name: production-data
+  # No `by` -- this is not a dependency, it is a lock.
+  reason: >-
+    Holds production customer records subject to a 7-year retention
+    requirement. Deleting this requires sign-off from Legal; see RUNBOOK-114.

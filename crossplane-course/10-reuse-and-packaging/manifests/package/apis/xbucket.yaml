@@ -1,0 +1,48 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xbuckets.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XBucket
+    plural: xbuckets
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                environment:
+                  type: string
+                  enum: [dev, staging, prod]
+                retentionDays:
+                  type: integer
+                  default: 30
+                  minimum: 1
+                  maximum: 3650
+              required: [environment]
+              x-kubernetes-validations:
+                - rule: "self.environment != 'prod' || !has(self.retentionDays) || self.retentionDays >= 30"
+                  message: "prod buckets must retain data for at least 30 days"
+            status:
+              type: object
+              properties:
+                bucketName: { type: string }
+                bucketArn: { type: string }
+      additionalPrinterColumns:
+        - name: ENVIRONMENT
+          type: string
+          jsonPath: .spec.environment
+        - name: BUCKET
+          type: string
+          jsonPath: .status.bucketName
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

@@ -1,0 +1,49 @@
+# Challenge 10 Task 1 — the whole platform as one Configuration package.
+#
+# dependsOn must list every provider AND function that ANY composition in this
+# package references. Miss one and the package installs but its compositions
+# fail at render time with "cannot find function".
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: acme-platform
+  annotations:
+    meta.crossplane.io/maintainer: Platform Team <platform@acme.example>
+    meta.crossplane.io/source: github.com/acme/platform
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: |
+      Self-service infrastructure APIs for ACME application teams:
+      XNetwork (VPC), XAppIdentity (IRSA roles), and XDatabase (Postgres).
+    meta.crossplane.io/readme: |
+      AFTER INSTALLING THIS PACKAGE you must also apply, yourself:
+
+        1. A ProviderConfig naming your AWS credentials. The package cannot
+           ship one - it would contain your account's credentials.
+        2. EnvironmentConfigs for each environment you run, supplying
+           accountId, region and oidcHost.
+
+      See docs/bootstrap.md for both. Then create an XNetwork, an XDatabase or
+      an XAppIdentity in your team's namespace.
+spec:
+  crossplane:
+    version: ">=v2.0.0"
+  # RANGES, NOT EXACT PINS. A provider is a singleton in the cluster, so an
+  # exact pin makes this package mutually exclusive with any other package
+  # pinning a different patch version. See solution.md task 5.
+  dependsOn:
+    - provider: xpkg.upbound.io/upbound/provider-aws-s3
+      version: ">=v1.21.0"
+    - provider: xpkg.upbound.io/upbound/provider-aws-ec2
+      version: ">=v1.21.0"
+    - provider: xpkg.upbound.io/upbound/provider-aws-rds
+      version: ">=v1.21.0"
+    - provider: xpkg.upbound.io/upbound/provider-aws-iam
+      version: ">=v1.21.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-go-templating
+      version: ">=v0.9.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform
+      version: ">=v0.8.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-auto-ready
+      version: ">=v0.4.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-environment-configs
+      version: ">=v0.4.0"

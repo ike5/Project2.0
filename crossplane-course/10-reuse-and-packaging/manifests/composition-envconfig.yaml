@@ -1,0 +1,116 @@
+# The Module 08 identity composition, with its hardcoded account ID and OIDC
+# host lifted into EnvironmentConfigs.
+#
+# Compare with 08-aws-iam-and-identity/manifests/composition.yaml, which has:
+#     {{- $accountId := "123456789012" -}}
+# baked into the template. That version works in exactly one account.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xappidentity-envconfig
+  labels:
+    provider: aws
+    style: envconfig
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XAppIdentity
+  mode: Pipeline
+  pipeline:
+    # STEP 1 -- MUST COME FIRST. Later steps read what this puts into context.
+    - step: environment
+      functionRef:
+        name: function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            # A Selector picks the EnvironmentConfig based on a field of the XR
+            # itself, so ONE composition serves every environment.
+            - type: Selector
+              selector:
+                matchLabels:
+                  - key: environment
+                    type: FromCompositeFieldPath
+                    valueFromFieldPath: spec.environment
+                    # If the XR omits spec.environment, fail loudly rather than
+                    # silently rendering with no environment data -- which would
+                    # produce an IAM role with an empty account ID.
+                    fromFieldPathPolicy: Required
+
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $sa := $xr.spec.serviceAccountName -}}
+            {{- $roleName := printf "%s-%s" $ns $name -}}
+
+            {{/* Everything environment-specific now comes from context. The
+                 composition itself contains no account IDs at all. */}}
+            {{- $env := index .context "apiextensions.crossplane.io/environment" -}}
+            {{- $accountId := $env.accountId -}}
+            {{- $oidcHost := $env.oidcHost -}}
+            {{- $region := $env.region -}}
+
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: Role
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "role" }}
+                crossplane.io/external-name: {{ $roleName }}
+            spec:
+              forProvider:
+                assumeRolePolicy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Principal": {
+                          "Federated": "arn:aws:iam::{{ $accountId }}:oidc-provider/{{ $oidcHost }}"
+                        },
+                        "Action": "sts:AssumeRoleWithWebIdentity",
+                        "Condition": {
+                          "StringEquals": {
+                            "{{ $oidcHost }}:sub": "system:serviceaccount:{{ $ns }}:{{ $sa }}",
+                            "{{ $oidcHost }}:aud": "sts.amazonaws.com"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                tags:
+                  team: {{ $ns }}
+                  # Cost allocation, supplied per environment.
+                  costCenter: {{ $env.costCenter }}
+                  region: {{ $region }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "serviceaccount" }}
+                eks.amazonaws.com/role-arn: {{ printf "arn:aws:iam::%s:role/%s" $accountId $roleName }}
+              name: {{ $sa }}
+              namespace: {{ $ns }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XAppIdentity
+            status:
+              serviceAccountName: {{ $sa }}
+              roleArn: {{ printf "arn:aws:iam::%s:role/%s" $accountId $roleName }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

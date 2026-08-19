@@ -1,0 +1,43 @@
+# The metadata file at the root of a Crossplane package.
+#
+# `crossplane xpkg build` reads this, bundles every YAML under the package root,
+# and produces an OCI image. Consumers install the image with a single
+# Configuration object and get the XRDs, the Compositions, AND every provider
+# and function they depend on.
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: acme-platform
+  annotations:
+    meta.crossplane.io/maintainer: Platform Team <platform@acme.example>
+    meta.crossplane.io/source: github.com/acme/platform
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: |
+      Self-service infrastructure APIs for ACME application teams:
+      XBucket for object storage and XDatabase for Postgres.
+    meta.crossplane.io/readme: |
+      Install this package, then create an XBucket or XDatabase in your team's
+      namespace. See https://github.com/acme/platform for the API reference.
+spec:
+  # The Crossplane versions this package works with. v2 is required because the
+  # XRDs use apiextensions.crossplane.io/v2 and scope: Namespaced.
+  crossplane:
+    version: ">=v2.0.0"
+
+  # Crossplane installs these automatically. The consumer never needs to know
+  # which providers or functions the compositions use.
+  #
+  # Use >= ranges rather than exact pins: an exact pin here means your package
+  # conflicts with any other package wanting a different patch version, and
+  # dependency resolution fails.
+  dependsOn:
+    - provider: xpkg.upbound.io/upbound/provider-aws-s3
+      version: ">=v1.21.0"
+    - provider: xpkg.upbound.io/upbound/provider-aws-rds
+      version: ">=v1.21.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-go-templating
+      version: ">=v0.9.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform
+      version: ">=v0.8.0"
+    - function: xpkg.upbound.io/crossplane-contrib/function-auto-ready
+      version: ">=v0.4.0"

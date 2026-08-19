@@ -1,0 +1,45 @@
+# Deletion ORDERING: the subnet must go before the VPC.
+#
+# Without this, Crossplane issues both deletes in parallel, AWS rejects the VPC
+# delete with DependencyViolation, and the VPC retries until the subnet happens
+# to be gone. That usually converges. "Usually" is not a strategy, and when it
+# does not converge you get resources stuck Terminating.
+#
+# With this Usage, Crossplane's admission webhook REJECTS the VPC deletion while
+# the subnet exists -- so the delete is never attempted, rather than attempted
+# and failed.
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: subnet-uses-vpc
+spec:
+  # The thing BEING USED -- protected while the user exists.
+  of:
+    apiVersion: ec2.aws.upbound.io/v1beta1
+    kind: VPC
+    resourceRef:
+      name: raw-vpc
+  # The thing USING it.
+  by:
+    apiVersion: ec2.aws.upbound.io/v1beta1
+    kind: Subnet
+    resourceRef:
+      name: raw-subnet-a
+  reason: "Subnet raw-subnet-a lives inside this VPC"
+---
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: igw-uses-vpc
+spec:
+  of:
+    apiVersion: ec2.aws.upbound.io/v1beta1
+    kind: VPC
+    resourceRef:
+      name: raw-vpc
+  by:
+    apiVersion: ec2.aws.upbound.io/v1beta1
+    kind: InternetGateway
+    resourceRef:
+      name: raw-igw
+  reason: "Internet gateway is attached to this VPC"

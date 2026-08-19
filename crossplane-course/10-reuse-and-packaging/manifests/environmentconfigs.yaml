@@ -1,0 +1,36 @@
+# Facts about each environment, kept OUT of the compositions that use them.
+#
+# The composition describes SHAPE; these supply FACTS. Without this split you
+# need a composition per environment, and they drift apart within a quarter.
+#
+# NOT FOR SECRETS. EnvironmentConfigs are readable by anything that can read the
+# cluster, and their contents flow into function inputs, which get logged.
+# Account IDs and VPC IDs are fine here; credentials are not.
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: aws-dev
+  labels:
+    environment: dev
+data:
+  accountId: "111111111111"
+  region: us-east-1
+  oidcHost: oidc.eks.us-east-1.amazonaws.com/id/DEVEXAMPLE11111111111111111111
+  # Platform-wide defaults that differ per environment.
+  defaultInstanceClass: db.t3.micro
+  backupRetentionDays: "1"
+  costCenter: engineering-sandbox
+---
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: aws-prod
+  labels:
+    environment: prod
+data:
+  accountId: "333333333333"
+  region: us-east-1
+  oidcHost: oidc.eks.us-east-1.amazonaws.com/id/PRODEXAMPLE3333333333333333333
+  defaultInstanceClass: db.r6g.large
+  backupRetentionDays: "30"
+  costCenter: platform-production

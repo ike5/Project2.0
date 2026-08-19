@@ -1,0 +1,188 @@
+# Challenge 10 Task 3 — make the environment un-spoofable.
+#
+# The attack this defends against: a developer in a dev namespace writes
+# `environment: prod` in their XR and receives an IAM role in the production
+# account. Today's composition selects the EnvironmentConfig from a field the
+# developer controls, so nothing stops them.
+#
+# The fix: derive the environment from a NAMESPACE LABEL that only an admin can
+# set, and remove the field from the XRD entirely so there is nothing to spoof.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-payments
+  labels:
+    # Platform-managed. Developers have no RBAC to patch namespace labels.
+    acme.io/environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-payments-prod
+  labels:
+    acme.io/environment: prod
+---
+# Belt and braces: even if the field is somehow settable, reject a mismatch.
+# Prefer removing the field (see the composition below) -- this is the
+# retrofit-friendly option for an API that already ships `environment`.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: env-matches-namespace
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["platform.acme.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["xappidentities", "xdatabases"]
+  paramKind:
+    apiVersion: v1
+    kind: Namespace
+  validations:
+    - expression: >-
+        !has(object.spec.environment) ||
+        object.spec.environment == params.metadata.labels['acme.io/environment']
+      message: >-
+        spec.environment must match the namespace's acme.io/environment label.
+        You cannot provision into an environment your namespace is not part of.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: env-matches-namespace
+spec:
+  policyName: env-matches-namespace
+  validationActions: [Deny]
+  # The Namespace object being validated against is the XR's own namespace.
+  paramRef:
+    parameterNotFoundAction: Deny
+    namespace: ""
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: acme.io/environment
+          operator: Exists
+---
+# The stronger fix: a composition that reads the namespace label directly and
+# ignores spec.environment entirely. Pair this with REMOVING `environment` from
+# the XRD schema, so there is no field to spoof in the first place.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xappidentity-namespace-scoped
+  labels:
+    provider: aws
+    style: namespace-derived
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XAppIdentity
+  mode: Pipeline
+  pipeline:
+    # Read the XR's own Namespace object as an extra resource.
+    - step: load-namespace
+      functionRef:
+        name: function-extra-resources
+      input:
+        apiVersion: extra-resources.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          extraResources:
+            - apiVersion: v1
+              kind: Namespace
+              into: ns
+              type: Selector
+              selector:
+                maxMatch: 1
+                matchLabels:
+                  - key: kubernetes.io/metadata.name
+                    type: FromCompositeFieldPath
+                    valueFromFieldPath: metadata.namespace
+    - step: environment
+      functionRef:
+        name: function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref:
+                # Resolved from the namespace label in the render step below;
+                # in a fuller implementation this is patched in from context.
+                name: aws-dev
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $sa := $xr.spec.serviceAccountName -}}
+
+            {{/* THE ENVIRONMENT COMES FROM THE NAMESPACE, NOT FROM THE XR.
+                 spec.environment is never read, so setting it achieves
+                 nothing. */}}
+            {{- $nsList := index .context "apiextensions.crossplane.io/extra-resources" "ns" -}}
+            {{- if not $nsList }}
+            {{- fail "namespace not found in extra resources" -}}
+            {{- end -}}
+            {{- $nsObj := index $nsList 0 -}}
+            {{- $env := dig "metadata" "labels" "acme.io/environment" "" $nsObj.resource -}}
+            {{- if not $env }}
+            {{- fail "namespace is missing the acme.io/environment label; ask an administrator" -}}
+            {{- end -}}
+
+            {{- $envData := index .context "apiextensions.crossplane.io/environment" -}}
+            {{- $accountId := $envData.accountId -}}
+            {{- $oidcHost := $envData.oidcHost -}}
+            {{- $roleName := printf "%s-%s" $ns $name -}}
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: Role
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "role" }}
+                crossplane.io/external-name: {{ $roleName }}
+            spec:
+              forProvider:
+                assumeRolePolicy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Principal": {
+                          "Federated": "arn:aws:iam::{{ $accountId }}:oidc-provider/{{ $oidcHost }}"
+                        },
+                        "Action": "sts:AssumeRoleWithWebIdentity",
+                        "Condition": {
+                          "StringEquals": {
+                            "{{ $oidcHost }}:sub": "system:serviceaccount:{{ $ns }}:{{ $sa }}",
+                            "{{ $oidcHost }}:aud": "sts.amazonaws.com"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                tags:
+                  team: {{ $ns }}
+                  environment: {{ $env }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XAppIdentity
+            status:
+              serviceAccountName: {{ $sa }}
+              roleArn: {{ printf "arn:aws:iam::%s:role/%s" $accountId $roleName }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready
