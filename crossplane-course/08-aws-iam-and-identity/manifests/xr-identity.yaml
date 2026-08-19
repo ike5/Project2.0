@@ -1,0 +1,19 @@
+# A developer asking for exactly the permissions their app needs.
+#
+# No JSON. No ARNs. No knowledge of the two-statement S3 rule. The composition
+# generates a correct least-privilege policy, which is the point: the secure
+# path has to be the easy path or nobody takes it.
+apiVersion: platform.acme.io/v1alpha1
+kind: XAppIdentity
+metadata:
+  name: payments-identity
+  namespace: team-payments
+spec:
+  serviceAccountName: payments
+  buckets:
+    - name: team-payments-payments-data
+      access: readwrite
+    - name: shared-reference-data
+      access: read
+  dynamoTables:
+    - payments-idempotency

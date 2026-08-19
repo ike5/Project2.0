@@ -1,0 +1,76 @@
+# The two-policy structure, made explicit.
+#
+# Read the comments carefully -- confusing these two is the single most common
+# IAM error in Crossplane, and its symptom is a role that has exactly the right
+# permissions and that nothing is allowed to use.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: report-generator
+spec:
+  forProvider:
+    # ===== TRUST POLICY: *WHO MAY BECOME THIS ROLE* =====
+    # This says nothing about what the role can do. It is the guest list.
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ec2.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    tags:
+      purpose: course-module-08
+  providerConfigRef:
+    name: default
+---
+# ===== PERMISSION POLICY: *WHAT THE ROLE MAY DO* =====
+# A separate object. On its own it grants nothing to anyone -- it must be
+# attached to a role.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: report-read-policy
+spec:
+  forProvider:
+    name: report-read-policy
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ReadReportObjects",
+            "Effect": "Allow",
+            "Action": ["s3:GetObject"],
+            "Resource": "arn:aws:s3:::reports-bucket/*"
+          },
+          {
+            "Sid": "ListReportBucket",
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket"],
+            "Resource": "arn:aws:s3:::reports-bucket"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default
+---
+# ===== THE JOIN =====
+# Without this, the role and the policy both exist and are entirely unrelated.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  name: report-generator-read
+spec:
+  forProvider:
+    roleRef:
+      name: report-generator
+    policyArnRef:
+      name: report-read-policy
+  providerConfigRef:
+    name: default

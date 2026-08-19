@@ -1,0 +1,70 @@
+# XAppIdentity — a platform API for "give my app permission to use its bucket".
+#
+# The developer names the buckets and the access level. The composition writes a
+# correctly-scoped policy every time, which is the only way least privilege
+# survives contact with a deadline: make the secure path the easy path.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xappidentities.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XAppIdentity
+    plural: xappidentities
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                serviceAccountName:
+                  description: >-
+                    The Kubernetes ServiceAccount that may assume this role.
+                    Pinned in the trust policy's Condition block -- without that
+                    condition ANY ServiceAccount in the cluster could assume it.
+                  type: string
+                buckets:
+                  description: S3 buckets this app may use, with an access level.
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      access:
+                        type: string
+                        enum: [read, readwrite]
+                        default: read
+                    required: [name]
+                  maxItems: 10
+                dynamoTables:
+                  type: array
+                  items:
+                    type: string
+                  maxItems: 10
+              required:
+                - serviceAccountName
+            status:
+              type: object
+              properties:
+                roleArn:
+                  type: string
+                serviceAccountName:
+                  type: string
+      additionalPrinterColumns:
+        - name: SERVICEACCOUNT
+          type: string
+          jsonPath: .spec.serviceAccountName
+        - name: ROLE
+          type: string
+          jsonPath: .status.roleArn
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

@@ -1,0 +1,168 @@
+# XAppIdentity — generate least-privilege IAM from a declaration of need.
+#
+# The developer says "my app reads bucket A and writes bucket B". This produces
+# a role, a correctly-scoped policy (with the two-statement S3 structure people
+# always get wrong), an attachment, and an annotated ServiceAccount.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xappidentity-aws
+  labels:
+    provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XAppIdentity
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $sa := $xr.spec.serviceAccountName -}}
+            {{- $roleName := printf "%s-%s" $ns $name -}}
+
+            {{/* In a real cluster these come from an EnvironmentConfig (Module 10)
+                 rather than being hardcoded -- they differ per cluster. */}}
+            {{- $accountId := "123456789012" -}}
+            {{- $oidcHost := "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE" -}}
+
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: Role
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "role" }}
+                crossplane.io/external-name: {{ $roleName }}
+            spec:
+              forProvider:
+                {{/*
+                  THE TRUST POLICY -- who may become this role.
+
+                  The Condition block is the security. It pins the role to ONE
+                  ServiceAccount in ONE namespace. Without it, any pod in the
+                  cluster could assume this role, which turns per-workload
+                  identity back into cluster-wide identity. Omitting it is a
+                  real and common misconfiguration.
+                */}}
+                assumeRolePolicy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Principal": {
+                          "Federated": "arn:aws:iam::{{ $accountId }}:oidc-provider/{{ $oidcHost }}"
+                        },
+                        "Action": "sts:AssumeRoleWithWebIdentity",
+                        "Condition": {
+                          "StringEquals": {
+                            "{{ $oidcHost }}:sub": "system:serviceaccount:{{ $ns }}:{{ $sa }}",
+                            "{{ $oidcHost }}:aud": "sts.amazonaws.com"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                tags:
+                  team: {{ $ns }}
+                  app: {{ $name }}
+              providerConfigRef:
+                name: default
+
+            {{/* ---- The permission policy, generated from the request ---- */}}
+            {{- $statements := list -}}
+            {{- range $b := ($xr.spec.buckets | default list) }}
+              {{- $objectActions := list "s3:GetObject" -}}
+              {{- if eq $b.access "readwrite" }}
+                {{- $objectActions = list "s3:GetObject" "s3:PutObject" "s3:DeleteObject" -}}
+              {{- end }}
+              {{/*
+                TWO statements per bucket, because object actions and bucket
+                actions target DIFFERENT ARNs. s3:ListBucket on "bucket/*"
+                silently grants nothing -- the app can fetch a key it already
+                knows and cannot list anything. This is the S3 IAM mistake.
+              */}}
+              {{- $statements = append $statements (dict
+                    "Sid" (printf "Objects%s" (regexReplaceAll "[^a-zA-Z0-9]" $b.name ""))
+                    "Effect" "Allow"
+                    "Action" $objectActions
+                    "Resource" (printf "arn:aws:s3:::%s/*" $b.name)) -}}
+              {{- $statements = append $statements (dict
+                    "Sid" (printf "List%s" (regexReplaceAll "[^a-zA-Z0-9]" $b.name ""))
+                    "Effect" "Allow"
+                    "Action" (list "s3:ListBucket")
+                    "Resource" (printf "arn:aws:s3:::%s" $b.name)) -}}
+            {{- end }}
+            {{- range $t := ($xr.spec.dynamoTables | default list) }}
+              {{- $statements = append $statements (dict
+                    "Sid" (printf "Table%s" (regexReplaceAll "[^a-zA-Z0-9]" $t ""))
+                    "Effect" "Allow"
+                    "Action" (list "dynamodb:GetItem" "dynamodb:PutItem" "dynamodb:Query" "dynamodb:UpdateItem")
+                    "Resource" (printf "arn:aws:dynamodb:us-east-1:%s:table/%s" $accountId $t)) -}}
+            {{- end }}
+
+            {{/* Only create a policy if something was actually requested -- an
+                 IAM policy with an empty Statement array is rejected by AWS. */}}
+            {{- if $statements }}
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: Policy
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "policy" }}
+                crossplane.io/external-name: {{ printf "%s-access" $roleName }}
+            spec:
+              forProvider:
+                name: {{ printf "%s-access" $roleName }}
+                {{/* Build the document as a real data structure and serialise it,
+                     rather than concatenating JSON by hand. Hand-built JSON in a
+                     template is how you ship a policy with a trailing comma. */}}
+                policy: {{ dict "Version" "2012-10-17" "Statement" $statements | toJson | quote }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: RolePolicyAttachment
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "attachment" }}
+            spec:
+              forProvider:
+                roleSelector:
+                  matchControllerRef: true
+                policyArnSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* The Kubernetes half of IRSA: a ServiceAccount annotated with the
+                 role ARN. The EKS pod identity webhook reads this annotation and
+                 injects the token and env vars into every pod that uses it. */}}
+            ---
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "serviceaccount" }}
+                eks.amazonaws.com/role-arn: {{ printf "arn:aws:iam::%s:role/%s" $accountId $roleName }}
+              name: {{ $sa }}
+              namespace: {{ $ns }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XAppIdentity
+            status:
+              serviceAccountName: {{ $sa }}
+              roleArn: {{ printf "arn:aws:iam::%s:role/%s" $accountId $roleName }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

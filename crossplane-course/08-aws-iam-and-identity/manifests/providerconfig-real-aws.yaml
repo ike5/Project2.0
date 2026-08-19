@@ -1,0 +1,56 @@
+# THE PRODUCTION VERSION of the ProviderConfig you have used all course.
+#
+# Compare against 02-providers-and-managed-resources/manifests/providerconfig.yaml.
+# The ONLY differences: no endpoint block, no skip_* fields, and IRSA instead of
+# a static Secret. Not one other manifest in this course changes.
+#
+# DO NOT APPLY THIS in the course cluster -- it has no OIDC provider and no real
+# AWS account. It is here to be read and to be the thing you copy when you go
+# live.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: production
+spec:
+  # IRSA: the provider pod's ServiceAccount assumes an IAM role via the cluster's
+  # OIDC issuer. Credentials are short-lived and rotate automatically. There is
+  # no key stored anywhere, so there is no key to leak.
+  credentials:
+    source: IRSA
+---
+# Managing a SECOND account from the same control plane.
+#
+# Crossplane authenticates via IRSA in its own account, then assumes a role in
+# the target account. The target's role trusts only this control plane's role,
+# which is an isolation boundary enforced by AWS rather than by your cluster --
+# considerably stronger than namespaces or RBAC.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: production-workloads
+spec:
+  credentials:
+    source: IRSA
+  assumeRoleChain:
+    - roleARN: arn:aws:iam::222222222222:role/CrossplaneProvisioner
+      # externalId defends against the confused-deputy problem: even if someone
+      # learns the role ARN, they cannot assume it without this shared secret.
+      externalID: a-shared-secret-agreed-with-the-target-account
+---
+# A third pattern: static keys, for when there is genuinely no alternative
+# (a control plane running outside AWS, for example).
+#
+# If you must do this: scope the IAM user tightly, rotate on a schedule, and
+# encrypt etcd at rest. Prefer WebIdentity over this whenever your cluster has
+# an OIDC issuer, even if it is not EKS.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: last-resort-static
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds-production
+      key: creds

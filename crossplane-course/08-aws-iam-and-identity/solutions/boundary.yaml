@@ -1,0 +1,48 @@
+# Challenge 08 Task 1 — a permissions boundary for developer-created roles.
+#
+# A boundary GRANTS NOTHING. It caps: effective permissions are
+# attached policies INTERSECT boundary. Any platform API that lets developers
+# create IAM roles should set one, or "create me a role" is effectively
+# "give me any permission in the account".
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: app-identity-boundary
+spec:
+  forProvider:
+    name: AppIdentityBoundary
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "MaxAllowedServices",
+            "Effect": "Allow",
+            "Action": ["s3:*", "dynamodb:*", "sqs:*", "logs:*"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "NeverIam",
+            "Effect": "Deny",
+            "Action": ["iam:*", "organizations:*", "account:*"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "NeverEscapeTheBoundary",
+            "Effect": "Deny",
+            "Action": [
+              "iam:DeleteRolePermissionsBoundary",
+              "iam:PutRolePermissionsBoundary"
+            ],
+            "Resource": "*"
+          },
+          {
+            "Sid": "NeverPassArbitraryRoles",
+            "Effect": "Deny",
+            "Action": ["iam:PassRole"],
+            "Resource": "*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default

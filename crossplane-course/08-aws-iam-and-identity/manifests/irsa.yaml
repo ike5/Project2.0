@@ -1,0 +1,206 @@
+# A COMPLETE IRSA setup, annotated end to end.
+#
+# This is the thing you build once per cluster to let Crossplane itself
+# authenticate to AWS without any stored key. Read it as a reference; it cannot
+# be applied to the course cluster because kind has no AWS-registered OIDC
+# issuer.
+#
+# ---------------------------------------------------------------------------
+# PIECE 1: tell AWS to trust your cluster's OIDC issuer.
+#
+# Every EKS cluster publishes an OIDC issuer URL that signs ServiceAccount
+# tokens. Registering it as an OpenIDConnectProvider is what lets STS verify
+# "this token really came from that cluster".
+#
+# Find yours with:
+#   aws eks describe-cluster --name my-cluster \
+#     --query "cluster.identity.oidc.issuer" --output text
+# ---------------------------------------------------------------------------
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: OpenIDConnectProvider
+metadata:
+  name: cluster-oidc
+spec:
+  forProvider:
+    url: https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE
+    clientIdList:
+      - sts.amazonaws.com
+    # The CA thumbprint of the issuer's TLS certificate.
+    thumbprintList:
+      - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+  providerConfigRef:
+    name: default
+---
+# ---------------------------------------------------------------------------
+# PIECE 2: an IAM role that ONE ServiceAccount may assume.
+# ---------------------------------------------------------------------------
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: crossplane-provider-aws
+spec:
+  forProvider:
+    # NOTE the "Condition" block in the policy below. It is the security.
+    # Without it, ANY ServiceAccount in the cluster could assume this role,
+    # which turns per-workload identity back into cluster-wide identity.
+    # The "sub" claim pins the role to one namespace and one ServiceAccount.
+    # Omitting it is a real and common misconfiguration.
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:sub": "system:serviceaccount:crossplane-system:provider-aws",
+                "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:aud": "sts.amazonaws.com"
+              }
+            }
+          }
+        ]
+      }
+    # A permissions boundary caps what this role can EVER do, even if someone
+    # later attaches AdministratorAccess to it. Any role that can create other
+    # roles should have one.
+    permissionsBoundary: arn:aws:iam::123456789012:policy/CrossplaneBoundary
+  providerConfigRef:
+    name: default
+---
+# ---------------------------------------------------------------------------
+# PIECE 3: what the provider is allowed to do.
+#
+# Scope this to the services your providers actually manage. Granting
+# AdministratorAccess "to get started" is how a control plane ends up able to
+# delete the account it runs in.
+#
+# Note the shape of the RDS grants: Describe* actions genuinely need
+# Resource "*" (you cannot describe a database without listing it first), but
+# every MUTATING action is pinned to an ARN prefix the platform owns. Splitting
+# read from write this way is how you scope a service that "needs *".
+# ---------------------------------------------------------------------------
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: crossplane-provider-policy
+spec:
+  forProvider:
+    name: crossplane-provider-policy
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ManageS3",
+            "Effect": "Allow",
+            "Action": ["s3:*"],
+            "Resource": ["arn:aws:s3:::acme-*", "arn:aws:s3:::acme-*/*"]
+          },
+          {
+            "Sid": "ReadRds",
+            "Effect": "Allow",
+            "Action": ["rds:Describe*", "rds:ListTagsForResource"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "ManageOwnRds",
+            "Effect": "Allow",
+            "Action": [
+              "rds:CreateDBInstance",
+              "rds:ModifyDBInstance",
+              "rds:DeleteDBInstance",
+              "rds:AddTagsToResource",
+              "rds:CreateDBSubnetGroup",
+              "rds:ModifyDBSubnetGroup",
+              "rds:DeleteDBSubnetGroup"
+            ],
+            "Resource": [
+              "arn:aws:rds:*:123456789012:db:acme-*",
+              "arn:aws:rds:*:123456789012:subgrp:acme-*"
+            ]
+          },
+          {
+            "Sid": "DenyIamEscalation",
+            "Effect": "Deny",
+            "Action": [
+              "iam:CreateUser",
+              "iam:CreateAccessKey",
+              "iam:AttachUserPolicy",
+              "iam:DeleteRolePermissionsBoundary"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  name: crossplane-provider-attach
+spec:
+  forProvider:
+    roleRef:
+      name: crossplane-provider-aws
+    policyArnRef:
+      name: crossplane-provider-policy
+  providerConfigRef:
+    name: default
+---
+# ---------------------------------------------------------------------------
+# PIECE 4: make the provider pod USE that ServiceAccount.
+#
+# A DeploymentRuntimeConfig customises how a provider's pod runs. Here it pins
+# the ServiceAccount name so it matches the `sub` claim in the trust policy
+# above -- these two strings MUST agree or STS silently refuses the assume.
+# ---------------------------------------------------------------------------
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: aws-irsa
+spec:
+  serviceAccountTemplate:
+    metadata:
+      name: provider-aws
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/crossplane-provider-aws
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        metadata:
+          labels:
+            app: provider-aws
+        spec:
+          containers:
+            - name: package-runtime
+              args:
+                - --poll-interval=5m
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-s3
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-s3:v1.21.0
+  runtimeConfigRef:
+    name: aws-irsa
+---
+# ---------------------------------------------------------------------------
+# PIECE 5: the ProviderConfig that ties it together.
+#
+# `source: IRSA` tells the provider to use the projected ServiceAccount token.
+# No secretRef, because there is no secret.
+# ---------------------------------------------------------------------------
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: IRSA
