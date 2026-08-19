@@ -1,0 +1,121 @@
+# A minimal working VPC as RAW managed resources -- no composition.
+#
+# Apply this FIRST in the lab, so you feel how much there is before you hide it
+# behind an API. This is ~10 resources for one network, and it is the smallest
+# useful version: two AZs, one public subnet each, no private subnets at all.
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: VPC
+metadata:
+  name: raw-vpc
+spec:
+  forProvider:
+    region: us-east-1
+    cidrBlock: 10.99.0.0/16
+    enableDnsSupport: true
+    # Required for RDS endpoints to resolve to private IPs inside the VPC.
+    enableDnsHostnames: true
+    tags:
+      Name: raw-vpc
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Subnet
+metadata:
+  name: raw-subnet-a
+spec:
+  forProvider:
+    region: us-east-1
+    cidrBlock: 10.99.0.0/24
+    availabilityZone: us-east-1a
+    # Reference the VPC OBJECT. Crossplane resolves this to the real vpc-... ID
+    # once the VPC exists. Until then this resource reports "cannot resolve
+    # references" and retries -- which is normal, not an error.
+    vpcIdRef:
+      name: raw-vpc
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Subnet
+metadata:
+  name: raw-subnet-b
+spec:
+  forProvider:
+    region: us-east-1
+    cidrBlock: 10.99.1.0/24
+    availabilityZone: us-east-1b
+    vpcIdRef:
+      name: raw-vpc
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: InternetGateway
+metadata:
+  name: raw-igw
+spec:
+  forProvider:
+    region: us-east-1
+    vpcIdRef:
+      name: raw-vpc
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: RouteTable
+metadata:
+  name: raw-public-rt
+spec:
+  forProvider:
+    region: us-east-1
+    vpcIdRef:
+      name: raw-vpc
+  providerConfigRef:
+    name: default
+---
+# THIS is what makes a subnet "public": a default route to the internet gateway.
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Route
+metadata:
+  name: raw-public-route
+spec:
+  forProvider:
+    region: us-east-1
+    routeTableIdRef:
+      name: raw-public-rt
+    destinationCidrBlock: 0.0.0.0/0
+    gatewayIdRef:
+      name: raw-igw
+  providerConfigRef:
+    name: default
+---
+# ...and THIS is the step everyone forgets. Without the association, the route
+# table exists, the route exists, and the subnet still routes nowhere.
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: RouteTableAssociation
+metadata:
+  name: raw-assoc-a
+spec:
+  forProvider:
+    region: us-east-1
+    subnetIdRef:
+      name: raw-subnet-a
+    routeTableIdRef:
+      name: raw-public-rt
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: RouteTableAssociation
+metadata:
+  name: raw-assoc-b
+spec:
+  forProvider:
+    region: us-east-1
+    subnetIdRef:
+      name: raw-subnet-b
+    routeTableIdRef:
+      name: raw-public-rt
+  providerConfigRef:
+    name: default

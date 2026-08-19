@@ -1,0 +1,319 @@
+# XNetwork — a complete VPC from a statement of intent.
+#
+# The developer says "small, highly available". This computes the CIDR blocks,
+# picks availability zones, and builds ~12 resources that all reference each
+# other correctly.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xnetwork-aws
+  labels:
+    provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XNetwork
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := $xr.spec.region | default "us-east-1" -}}
+            {{- $idx := $xr.spec.netIndex | default 0 -}}
+            {{- $ha := $xr.spec.highAvailability -}}
+            {{- if kindIs "invalid" $ha }}{{ $ha = true }}{{ end -}}
+
+            {{/* ---------- ADDRESS PLAN ----------
+                 The platform owns CIDR allocation. Each network gets a /16 slot
+                 out of 10.x.0.0/16, indexed by netIndex, then subdivided.
+                 A developer choosing their own CIDR is how you end up with two
+                 VPCs that overlap and can never be peered. */}}
+            {{- $octet := add 100 $idx -}}
+            {{- $vpcCidr := printf "10.%d.0.0/16" $octet -}}
+            {{- if eq $xr.spec.size "small" }}{{ $vpcCidr = printf "10.%d.0.0/20" $octet }}{{ end -}}
+            {{- if eq $xr.spec.size "medium" }}{{ $vpcCidr = printf "10.%d.0.0/18" $octet }}{{ end -}}
+
+            {{/* Availability zones are region-specific: us-east-1a does not
+                 exist in eu-west-1. Derive them from the region. */}}
+            {{- $azs := list (printf "%sa" $region) (printf "%sb" $region) -}}
+            {{- if not $ha }}{{ $azs = list (printf "%sa" $region) }}{{ end -}}
+
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: VPC
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "vpc" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                cidrBlock: {{ $vpcCidr }}
+                enableDnsSupport: true
+                # Without this, RDS endpoints do not resolve to private IPs
+                # inside the VPC -- a subtle failure that looks like a network
+                # problem rather than a DNS setting.
+                enableDnsHostnames: true
+                tags:
+                  Name: {{ $name }}
+                  managed-by: crossplane
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: InternetGateway
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "igw" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                # matchControllerRef means "the VPC composed by THIS XR", so two
+                # XNetworks in one cluster never cross-wire.
+                vpcIdSelector:
+                  matchControllerRef: true
+                tags:
+                  Name: {{ printf "%s-igw" $name }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: RouteTable
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-rt" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                vpcIdSelector:
+                  matchControllerRef: true
+                tags:
+                  Name: {{ printf "%s-public" $name }}
+              providerConfigRef:
+                name: default
+            ---
+            # The default route that makes the public subnets actually public.
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Route
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-route" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                routeTableIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+                destinationCidrBlock: 0.0.0.0/0
+                gatewayIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+
+            {{/* ---------- SUBNETS, one pair per AZ ---------- */}}
+            {{- range $i, $az := $azs }}
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Subnet
+            metadata:
+              annotations:
+                {{/* Keyed to the AZ NAME, never the loop index: removing an AZ
+                     must not rename the surviving subnets. See Module 05. */}}
+                {{ setResourceNameAnnotation (printf "public-subnet-%s" $az) }}
+              labels:
+                tier: public
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                availabilityZone: {{ $az }}
+                cidrBlock: {{ printf "10.%d.%d.0/24" $octet $i }}
+                mapPublicIpOnLaunch: true
+                vpcIdSelector:
+                  matchControllerRef: true
+                tags:
+                  Name: {{ printf "%s-public-%s" $name $az }}
+                  tier: public
+              providerConfigRef:
+                name: default
+            ---
+            # The association nobody remembers. Without it the subnet has no
+            # route to the internet gateway, however correct the route table is.
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: RouteTableAssociation
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "public-assoc-%s" $az) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                subnetIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+                    az: {{ $az }}
+                routeTableIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Subnet
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "private-subnet-%s" $az) }}
+              labels:
+                tier: private
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                availabilityZone: {{ $az }}
+                # Private subnets sit higher in the range, well clear of the
+                # public ones.
+                cidrBlock: {{ printf "10.%d.%d.0/24" $octet (add $i 10) }}
+                mapPublicIpOnLaunch: false
+                vpcIdSelector:
+                  matchControllerRef: true
+                tags:
+                  Name: {{ printf "%s-private-%s" $name $az }}
+                  tier: private
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* ---------- SECURITY GROUPS ---------- */}}
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: SecurityGroup
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "app-sg" }}
+              labels:
+                role: app
+            spec:
+              forProvider:
+                region: {{ $region }}
+                name: {{ printf "%s-app" $name }}
+                # AWS REQUIRES a description. An empty one is rejected with an
+                # error that does not obviously say so.
+                description: Application tier for {{ $name }}
+                vpcIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: SecurityGroup
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "db-sg" }}
+              labels:
+                role: db
+            spec:
+              forProvider:
+                region: {{ $region }}
+                name: {{ printf "%s-db" $name }}
+                description: Database tier for {{ $name }}
+                vpcIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+            ---
+            # Postgres, reachable ONLY from the app security group.
+            #
+            # Referencing another security group rather than a CIDR is the
+            # pattern worth learning: it stays correct as IPs change, instances
+            # are replaced, and the app scales.
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: SecurityGroupRule
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "db-ingress" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                type: ingress
+                fromPort: 5432
+                toPort: 5432
+                protocol: tcp
+                securityGroupIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    role: db
+                sourceSecurityGroupIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    role: app
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: SecurityGroupRule
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "app-egress" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                type: egress
+                fromPort: 0
+                toPort: 0
+                protocol: "-1"
+                cidrBlocks:
+                  - 0.0.0.0/0
+                securityGroupIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    role: app
+              providerConfigRef:
+                name: default
+
+            {{/* ---------- STATUS ----------
+                 Guard every read of observed state: on the first reconcile none
+                 of these resources exist yet. */}}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XNetwork
+            status:
+              cidrBlock: {{ $vpcCidr }}
+              {{- $vpc := index .observed.resources "vpc" }}
+              {{- if $vpc }}
+              {{- $vpcId := dig "status" "atProvider" "id" "" $vpc.resource }}
+              {{- if $vpcId }}
+              vpcId: {{ $vpcId }}
+              {{- end }}
+              {{- end }}
+              publicSubnetIds:
+              {{- range $az := $azs }}
+              {{- $s := index $.observed.resources (printf "public-subnet-%s" $az) }}
+              {{- if $s }}
+              {{- $sid := dig "status" "atProvider" "id" "" $s.resource }}
+              {{- if $sid }}
+                - {{ $sid }}
+              {{- end }}
+              {{- end }}
+              {{- end }}
+              privateSubnetIds:
+              {{- range $az := $azs }}
+              {{- $s := index $.observed.resources (printf "private-subnet-%s" $az) }}
+              {{- if $s }}
+              {{- $sid := dig "status" "atProvider" "id" "" $s.resource }}
+              {{- if $sid }}
+                - {{ $sid }}
+              {{- end }}
+              {{- end }}
+              {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

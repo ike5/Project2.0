@@ -1,0 +1,71 @@
+# Challenge 07 Task 3 — adopt a VPC that already exists.
+#
+# READ solution.md BEFORE widening managementPolicies. Skipping straight to ["*"]
+# with a mismatched CIDR causes Crossplane to delete and recreate the VPC --
+# destroying everything inside it -- because a VPC's CIDR cannot be changed in
+# place. This is the most destructive mistake available in Crossplane.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xnetwork-aws-import
+  labels:
+    provider: aws
+    mode: import
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XNetwork
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $region := $xr.spec.region | default "us-east-1" -}}
+            {{/*
+              Start every composed resource Observe-only. Crossplane will find the
+              real resources, populate status.atProvider, and change NOTHING.
+              Widen only once the rendered spec matches observed reality.
+            */}}
+            {{- $policies := list "Observe" -}}
+            {{- if $xr.spec.adopt }}{{ $policies = list "Observe" "Create" "Update" }}{{ end -}}
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: VPC
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "vpc" }}
+                # The REAL vpc-... id, supplied by whoever is doing the import.
+                crossplane.io/external-name: {{ $xr.spec.existingVpcId }}
+            spec:
+              managementPolicies: {{ toYaml $policies | nindent 16 }}
+              forProvider:
+                region: {{ $region }}
+              providerConfigRef:
+                name: default
+              # Even fully adopted, never let deleting the XR destroy a network
+              # that predates our involvement with it.
+              deletionPolicy: Orphan
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XNetwork
+            status:
+              {{- $vpc := index .observed.resources "vpc" }}
+              {{- if $vpc }}
+              {{- $cidr := dig "status" "atProvider" "cidrBlock" "" $vpc.resource }}
+              {{- if $cidr }}
+              # Compare this against what your composition WOULD have computed.
+              # They must match before you set adopt: true.
+              cidrBlock: {{ $cidr }}
+              {{- end }}
+              vpcId: {{ $xr.spec.existingVpcId }}
+              {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

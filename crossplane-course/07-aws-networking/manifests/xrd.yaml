@@ -1,0 +1,89 @@
+# XNetwork — a network API that exposes INTENT, not CIDR arithmetic.
+#
+# Compare with the alternative in README section 6: an API letting developers
+# choose their own CIDR blocks and availability zones. That version is more
+# flexible and lets a developer create an overlapping, single-AZ network with no
+# private subnets. The platform holds those invariants instead.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xnetworks.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XNetwork
+    plural: xnetworks
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                region:
+                  type: string
+                  default: us-east-1
+                  enum: [us-east-1, us-west-2, eu-west-1]
+                size:
+                  description: >-
+                    Determines the VPC's CIDR size. The platform owns the
+                    allocation scheme, so networks cannot overlap.
+                  type: string
+                  enum: [small, medium, large]
+                  default: small
+                netIndex:
+                  description: >-
+                    Which slot in the platform's address plan this network
+                    occupies. Two networks with the same index WOULD overlap,
+                    which is why a real platform allocates this centrally
+                    (see the challenge).
+                  type: integer
+                  minimum: 0
+                  maximum: 15
+                  default: 0
+                highAvailability:
+                  description: >-
+                    Spread across two availability zones. Required for RDS, which
+                    needs a subnet group covering at least two AZs.
+                  type: boolean
+                  default: true
+                enableNatGateway:
+                  description: >-
+                    Let private subnets reach the internet outbound. Costs roughly
+                    $32/month per gateway on real AWS -- off by default deliberately.
+                  type: boolean
+                  default: false
+              required: []
+            status:
+              type: object
+              properties:
+                vpcId:
+                  type: string
+                cidrBlock:
+                  type: string
+                publicSubnetIds:
+                  type: array
+                  items:
+                    type: string
+                privateSubnetIds:
+                  type: array
+                  items:
+                    type: string
+      additionalPrinterColumns:
+        - name: SIZE
+          type: string
+          jsonPath: .spec.size
+        - name: CIDR
+          type: string
+          jsonPath: .status.cidrBlock
+        - name: VPC
+          type: string
+          jsonPath: .status.vpcId
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

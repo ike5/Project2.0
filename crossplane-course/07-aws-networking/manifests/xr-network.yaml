@@ -1,0 +1,15 @@
+# A developer requesting a network. Four lines of intent.
+#
+# No CIDR arithmetic, no availability zone names, no route tables. The platform
+# guarantees: non-overlapping addresses, two AZs, private subnets that exist,
+# and a database security group reachable only from the app tier.
+apiVersion: platform.acme.io/v1alpha1
+kind: XNetwork
+metadata:
+  name: payments-net
+  namespace: team-payments
+spec:
+  region: us-east-1
+  size: small
+  netIndex: 1
+  highAvailability: true

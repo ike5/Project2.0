@@ -1,0 +1,93 @@
+# Challenge 07 Task 4 — DELIBERATELY BROKEN.
+#
+# This builds a VPC whose "public" subnet cannot reach the internet.
+# Diagnose it before reading solution.md. Everything here applies cleanly and
+# every resource reaches SYNCED=True READY=True -- the fault is not a Crossplane
+# error, it is a networking one, which is exactly what makes it good practice.
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: VPC
+metadata:
+  name: broken-vpc
+spec:
+  forProvider:
+    region: us-east-1
+    cidrBlock: 10.250.0.0/16
+    enableDnsSupport: true
+    enableDnsHostnames: true
+    tags:
+      Name: broken-vpc
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Subnet
+metadata:
+  name: broken-public-subnet
+spec:
+  forProvider:
+    region: us-east-1
+    cidrBlock: 10.250.1.0/24
+    availabilityZone: us-east-1a
+    mapPublicIpOnLaunch: true
+    vpcIdRef:
+      name: broken-vpc
+    tags:
+      Name: broken-public
+      tier: public
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: InternetGateway
+metadata:
+  name: broken-igw
+spec:
+  forProvider:
+    region: us-east-1
+    vpcIdRef:
+      name: broken-vpc
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: RouteTable
+metadata:
+  name: broken-rt
+spec:
+  forProvider:
+    region: us-east-1
+    vpcIdRef:
+      name: broken-vpc
+    tags:
+      Name: broken-public-rt
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Route
+metadata:
+  name: broken-route
+spec:
+  forProvider:
+    region: us-east-1
+    routeTableIdRef:
+      name: broken-rt
+    destinationCidrBlock: 0.0.0.0/0
+    gatewayIdRef:
+      name: broken-igw
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: SecurityGroup
+metadata:
+  name: broken-sg
+spec:
+  forProvider:
+    region: us-east-1
+    name: broken-sg
+    description: Security group for the broken network exercise
+    vpcIdRef:
+      name: broken-vpc
+  providerConfigRef:
+    name: default

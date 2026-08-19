@@ -1,0 +1,278 @@
+# Challenge 07 Task 1 — XNetwork with working NAT gateways.
+#
+# Only the NAT-specific step is shown; merge it into the module's composition
+# after the subnets are rendered. See solution.md for the one-vs-per-AZ argument.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xnetwork-aws-nat
+  labels:
+    provider: aws
+    feature: nat
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XNetwork
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := $xr.spec.region | default "us-east-1" -}}
+            {{- $idx := $xr.spec.netIndex | default 0 -}}
+            {{- $octet := add 100 $idx -}}
+            {{- $ha := $xr.spec.highAvailability -}}
+            {{- if kindIs "invalid" $ha }}{{ $ha = true }}{{ end -}}
+            {{- $azs := list (printf "%sa" $region) (printf "%sb" $region) -}}
+            {{- if not $ha }}{{ $azs = list (printf "%sa" $region) }}{{ end -}}
+
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: VPC
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "vpc" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                cidrBlock: {{ printf "10.%d.0.0/20" $octet }}
+                enableDnsSupport: true
+                enableDnsHostnames: true
+                tags:
+                  Name: {{ $name }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: InternetGateway
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "igw" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                vpcIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: RouteTable
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-rt" }}
+              labels:
+                tier: public
+            spec:
+              forProvider:
+                region: {{ $region }}
+                vpcIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Route
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "public-route" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                routeTableIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+                destinationCidrBlock: 0.0.0.0/0
+                gatewayIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+
+            {{- range $i, $az := $azs }}
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Subnet
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "public-subnet-%s" $az) }}
+              labels:
+                tier: public
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                availabilityZone: {{ $az }}
+                cidrBlock: {{ printf "10.%d.%d.0/24" $octet $i }}
+                mapPublicIpOnLaunch: true
+                vpcIdSelector:
+                  matchControllerRef: true
+                tags:
+                  tier: public
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: RouteTableAssociation
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "public-assoc-%s" $az) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                subnetIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+                    az: {{ $az }}
+                routeTableIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Subnet
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "private-subnet-%s" $az) }}
+              labels:
+                tier: private
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                availabilityZone: {{ $az }}
+                cidrBlock: {{ printf "10.%d.%d.0/24" $octet (add $i 10) }}
+                mapPublicIpOnLaunch: false
+                vpcIdSelector:
+                  matchControllerRef: true
+                tags:
+                  tier: private
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* ============ TASK 1: NAT GATEWAYS ============
+                 One per AZ. See solution.md for when one shared gateway is the
+                 better call, and for why a VPC endpoint is often better still. */}}
+            {{- if $xr.spec.enableNatGateway }}
+            {{- range $i, $az := $azs }}
+            ---
+            # An Elastic IP -- a NAT gateway needs a stable public address.
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: EIP
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "nat-eip-%s" $az) }}
+              labels:
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                domain: vpc
+                tags:
+                  Name: {{ printf "%s-nat-%s" $name $az }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: NATGateway
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "nat-%s" $az) }}
+              labels:
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                # THE NAT GATEWAY LIVES IN A **PUBLIC** SUBNET. It forwards
+                # traffic out via the internet gateway, so it needs a route to
+                # one itself. Placing it in a private subnet is the classic
+                # mistake and produces a NAT that cannot reach anything.
+                subnetIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: public
+                    az: {{ $az }}
+                allocationIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    az: {{ $az }}
+              providerConfigRef:
+                name: default
+            ---
+            # A private route table PER AZ, so each AZ's traffic uses its own NAT
+            # and never crosses an AZ boundary (which would cost money and add
+            # latency, and would fail if the other AZ went down).
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: RouteTable
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "private-rt-%s" $az) }}
+              labels:
+                tier: private
+                az: {{ $az }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                vpcIdSelector:
+                  matchControllerRef: true
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: Route
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "private-route-%s" $az) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                routeTableIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: private
+                    az: {{ $az }}
+                destinationCidrBlock: 0.0.0.0/0
+                natGatewayIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    az: {{ $az }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: ec2.aws.upbound.io/v1beta1
+            kind: RouteTableAssociation
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation (printf "private-assoc-%s" $az) }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                subnetIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: private
+                    az: {{ $az }}
+                routeTableIdSelector:
+                  matchControllerRef: true
+                  matchLabels:
+                    tier: private
+                    az: {{ $az }}
+              providerConfigRef:
+                name: default
+            {{- end }}
+            {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready
