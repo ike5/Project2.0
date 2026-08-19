@@ -1,0 +1,19 @@
+# Module 06 adds RDS to the providers you already have.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-rds
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-rds:v1.21.0
+---
+# Widen the activation policy to include the RDS types this module uses.
+# Without this the new CRDs stay inert and `kind: Instance` will not resolve.
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: course-resources
+spec:
+  activate:
+    - "*.s3.aws.upbound.io"
+    - "*.ec2.aws.upbound.io"
+    - "*.rds.aws.upbound.io"

@@ -1,0 +1,137 @@
+# Challenge 06 Task 5 — an XR that composes other XRs.
+#
+# Powerful: a whole environment from one resource, reusing the XWebApp API.
+# Dangerous: deleting this one object cascades to three apps and their databases.
+# See solution.md for the mitigations, and apply them before using this shape
+# anywhere real.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xplatforms.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XPlatform
+    plural: xplatforms
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                frontendImage:
+                  type: string
+                apiImage:
+                  type: string
+                workerImage:
+                  type: string
+                host:
+                  type: string
+              required: [frontendImage, apiImage, workerImage]
+            status:
+              type: object
+              properties:
+                sharedBucket:
+                  type: string
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xplatform-aws
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XPlatform
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+
+            {{/* A shared bucket all three apps use. */}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "shared-bucket" }}
+                crossplane.io/external-name: {{ printf "%s-%s-shared" $ns $name }}
+            spec:
+              forProvider:
+                region: us-east-1
+                tags:
+                  platform: {{ $name }}
+              providerConfigRef:
+                name: default
+              # Survives a cascade delete of the XPlatform. Without this, one
+              # `kubectl delete xplatform` destroys the shared data too.
+              deletionPolicy: Orphan
+
+            {{/* Three XWebApps, composed BY this XR. Each of them in turn
+                 composes its own Deployment, Service and database. */}}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XWebApp
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "frontend" }}
+              name: {{ printf "%s-frontend" $name }}
+              namespace: {{ $ns }}
+            spec:
+              image: {{ $xr.spec.frontendImage }}
+              replicas: 2
+              database: false
+              storage: false
+              {{- if $xr.spec.host }}
+              host: {{ $xr.spec.host }}
+              {{- end }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XWebApp
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "api" }}
+              name: {{ printf "%s-api" $name }}
+              namespace: {{ $ns }}
+            spec:
+              image: {{ $xr.spec.apiImage }}
+              replicas: 3
+              size: medium
+              database: true
+              storage: true
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XWebApp
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "worker" }}
+              name: {{ printf "%s-worker" $name }}
+              namespace: {{ $ns }}
+            spec:
+              image: {{ $xr.spec.workerImage }}
+              replicas: 1
+              database: true
+              storage: true
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XPlatform
+            status:
+              sharedBucket: {{ printf "%s-%s-shared" $ns $name }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

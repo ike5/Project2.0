@@ -1,0 +1,15 @@
+# What a developer writes to get a database, a bucket, and a running app.
+#
+# Eight lines. No AWS knowledge. No password anywhere.
+apiVersion: platform.acme.io/v1alpha1
+kind: XWebApp
+metadata:
+  name: payments
+  namespace: team-payments
+spec:
+  image: xp-course/sample-app:1.0
+  replicas: 2
+  size: small
+  database: true
+  storage: true
+  host: payments.localhost

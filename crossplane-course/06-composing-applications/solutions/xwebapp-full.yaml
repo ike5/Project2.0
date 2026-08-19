@@ -1,0 +1,302 @@
+# Challenge 06 Tasks 1 and 2 — XWebApp extended with bucket-scoped IAM
+# credentials and an optional background worker.
+#
+# Only the additions are shown as a complete composition; diff it against
+# ../manifests/composition.yaml to see exactly what changed.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xwebapp-aws-full
+  labels:
+    provider: aws
+    tier: full
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XWebApp
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := "us-east-1" -}}
+            {{- $connSecret := printf "%s-db-conn" $name -}}
+            {{- $awsSecret := printf "%s-aws-creds" $name -}}
+            {{- $bucket := printf "%s-%s-data" $ns $name -}}
+            {{- $class := "db.t3.micro" -}}
+            {{- if eq $xr.spec.size "medium" }}{{ $class = "db.t3.small" }}{{ end }}
+            {{- if eq $xr.spec.size "large" }}{{ $class = "db.r6g.large" }}{{ end }}
+
+            {{- if $xr.spec.database }}
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: Instance
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "database" }}
+                crossplane.io/external-name: {{ printf "%s-%s" $ns $name }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                engine: postgres
+                engineVersion: "16.3"
+                instanceClass: {{ $class }}
+                allocatedStorage: 20
+                username: appuser
+                autoGeneratePassword: true
+                passwordSecretRef:
+                  namespace: {{ $ns }}
+                  name: {{ printf "%s-db-password" $name }}
+                  key: password
+                skipFinalSnapshot: true
+                publiclyAccessible: false
+              providerConfigRef:
+                name: default
+              writeConnectionSecretToRef:
+                namespace: {{ $ns }}
+                name: {{ $connSecret }}
+            {{- end }}
+
+            {{- if $xr.spec.storage }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  app: {{ $name }}
+                  team: {{ $ns }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket-pab" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ $bucket }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+              providerConfigRef:
+                name: default
+
+            {{/* ---- TASK 1: credentials scoped to THIS bucket only ---- */}}
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: User
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "app-user" }}
+                crossplane.io/external-name: {{ printf "%s-%s-app" $ns $name }}
+            spec:
+              forProvider:
+                tags:
+                  app: {{ $name }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: UserPolicy
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "app-user-policy" }}
+            spec:
+              forProvider:
+                userRef:
+                  name: {{ printf "%s-app-user" $name }}
+                {{/*
+                  TWO statements are required: object-level actions target
+                  "bucket/*", but ListBucket targets the bucket ITSELF. Getting
+                  this wrong yields an app that can read objects but cannot list
+                  them, which is a confusing failure.
+                */}}
+                policy: |
+                  {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+                        "Resource": "arn:aws:s3:::{{ $bucket }}/*"
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": ["s3:ListBucket"],
+                        "Resource": "arn:aws:s3:::{{ $bucket }}"
+                      }
+                    ]
+                  }
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: iam.aws.upbound.io/v1beta1
+            kind: AccessKey
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "app-access-key" }}
+            spec:
+              forProvider:
+                userRef:
+                  name: {{ printf "%s-app-user" $name }}
+              providerConfigRef:
+                name: default
+              writeConnectionSecretToRef:
+                namespace: {{ $ns }}
+                name: {{ $awsSecret }}
+            {{- end }}
+
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "deployment" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+              labels:
+                app: {{ $name }}
+            spec:
+              replicas: {{ $xr.spec.replicas | default 2 }}
+              selector:
+                matchLabels:
+                  app: {{ $name }}
+              template:
+                metadata:
+                  labels:
+                    app: {{ $name }}
+                spec:
+                  containers:
+                    - name: app
+                      image: {{ $xr.spec.image }}
+                      ports:
+                        - containerPort: 8080
+                      env:
+                        - name: APP_NAME
+                          value: {{ $name }}
+                        {{- if $xr.spec.database }}
+                        - name: DB_HOST
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: endpoint }
+                        - name: DB_PORT
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: port }
+                        - name: DB_USER
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: username }
+                        - name: DB_PASSWORD
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: password }
+                        {{- end }}
+                        {{- if $xr.spec.storage }}
+                        - name: BUCKET_NAME
+                          value: {{ $bucket }}
+                        {{/* The AccessKey connection secret uses the generic
+                             username/password keys for the id and secret. */}}
+                        - name: AWS_ACCESS_KEY_ID
+                          valueFrom:
+                            secretKeyRef: { name: {{ $awsSecret }}, key: username }
+                        - name: AWS_SECRET_ACCESS_KEY
+                          valueFrom:
+                            secretKeyRef: { name: {{ $awsSecret }}, key: password }
+                        - name: AWS_REGION
+                          value: {{ $region }}
+                        {{- end }}
+                      readinessProbe:
+                        httpGet:
+                          path: /healthz
+                          port: 8080
+                        initialDelaySeconds: 5
+                        periodSeconds: 5
+
+            {{/* ---- TASK 2: an independently scalable worker ----
+                 Note `and` guards the parent object: an XR omitting `worker`
+                 entirely would otherwise fail the whole render on a nil map. */}}
+            {{- if and $xr.spec.worker $xr.spec.worker.enabled }}
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "worker" }}
+              name: {{ printf "%s-worker" $name }}
+              namespace: {{ $ns }}
+              labels:
+                app: {{ printf "%s-worker" $name }}
+            spec:
+              replicas: {{ $xr.spec.worker.replicas | default 1 }}
+              selector:
+                matchLabels:
+                  app: {{ printf "%s-worker" $name }}
+              template:
+                metadata:
+                  labels:
+                    app: {{ printf "%s-worker" $name }}
+                spec:
+                  containers:
+                    - name: worker
+                      image: {{ $xr.spec.image }}
+                      command: {{ toYaml ($xr.spec.worker.command | default (list "python" "worker.py")) | nindent 24 }}
+                      env:
+                        - name: APP_NAME
+                          value: {{ printf "%s-worker" $name }}
+                        {{- if $xr.spec.database }}
+                        {{/* The SAME connection secret -- one database, two
+                             workloads, no duplicated credentials. */}}
+                        - name: DB_HOST
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: endpoint }
+                        - name: DB_PORT
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: port }
+                        - name: DB_USER
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: username }
+                        - name: DB_PASSWORD
+                          valueFrom:
+                            secretKeyRef: { name: {{ $connSecret }}, key: password }
+                        {{- end }}
+            {{- end }}
+
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "service" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+            spec:
+              selector:
+                app: {{ $name }}
+              ports:
+                - port: 80
+                  targetPort: 8080
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XWebApp
+            status:
+              {{- if $xr.spec.storage }}
+              bucketName: {{ $bucket }}
+              {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

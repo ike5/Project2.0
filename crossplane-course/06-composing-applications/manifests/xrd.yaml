@@ -1,0 +1,77 @@
+# XWebApp — one API for an entire service: its database, its object storage,
+# and the application that uses them.
+#
+# This is the Crossplane v2 headline. A namespaced XR composes cloud resources
+# AND ordinary Kubernetes resources, so the connection details never leave the
+# cluster and no human ever handles the database password.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xwebapps.platform.acme.io
+spec:
+  scope: Namespaced
+  group: platform.acme.io
+  names:
+    kind: XWebApp
+    plural: xwebapps
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                image:
+                  description: The container image to run.
+                  type: string
+                replicas:
+                  type: integer
+                  default: 2
+                  minimum: 1
+                  maximum: 10
+                size:
+                  description: >-
+                    T-shirt sizing. The developer states intent; the platform
+                    decides what instance class that means.
+                  type: string
+                  enum: [small, medium, large]
+                  default: small
+                database:
+                  description: Whether this app needs a Postgres database.
+                  type: boolean
+                  default: true
+                storage:
+                  description: Whether this app needs an S3 bucket.
+                  type: boolean
+                  default: false
+                host:
+                  description: Hostname to route to this app via Ingress.
+                  type: string
+              required:
+                - image
+            status:
+              type: object
+              properties:
+                url:
+                  type: string
+                databaseEndpoint:
+                  type: string
+                bucketName:
+                  type: string
+      additionalPrinterColumns:
+        - name: IMAGE
+          type: string
+          jsonPath: .spec.image
+        - name: SIZE
+          type: string
+          jsonPath: .spec.size
+        - name: DB
+          type: boolean
+          jsonPath: .spec.database
+        - name: READY
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status

@@ -1,0 +1,282 @@
+# XWebApp — database + bucket + Deployment + Service + Ingress from one XR.
+#
+# Read the template looking for the ONE thing that could not be done in
+# Crossplane v1: an `apiVersion: apps/v1, kind: Deployment` composed directly,
+# with no provider-kubernetes Object wrapper around it.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xwebapp-aws
+  labels:
+    provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XWebApp
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $region := "us-east-1" -}}
+            {{- $connSecret := printf "%s-db-conn" $name -}}
+
+            {{/* Map developer intent onto an AWS instance class. The developer
+                 says "small"; only the platform needs to know what that costs. */}}
+            {{- $class := "db.t3.micro" -}}
+            {{- if eq $xr.spec.size "medium" }}{{ $class = "db.t3.small" }}{{ end }}
+            {{- if eq $xr.spec.size "large" }}{{ $class = "db.r6g.large" }}{{ end }}
+
+            {{/* ================= DATABASE (optional) ================= */}}
+            {{- if $xr.spec.database }}
+            ---
+            apiVersion: rds.aws.upbound.io/v1beta1
+            kind: Instance
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "database" }}
+                crossplane.io/external-name: {{ printf "%s-%s" $ns $name }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                engine: postgres
+                engineVersion: "16.3"
+                instanceClass: {{ $class }}
+                allocatedStorage: 20
+                username: appuser
+                {{/*
+                  The provider generates a random password and stores it in a
+                  Secret. Nobody types it, nobody reads it, and it never appears
+                  in git, CI logs, or a state file.
+                */}}
+                autoGeneratePassword: true
+                passwordSecretRef:
+                  namespace: {{ $ns }}
+                  name: {{ printf "%s-db-password" $name }}
+                  key: password
+                skipFinalSnapshot: true
+                publiclyAccessible: false
+              providerConfigRef:
+                name: default
+              {{/*
+                THE KEY LINE. Endpoint, port, username and password are written
+                into this Secret, in this namespace, where the Deployment below
+                can read them.
+              */}}
+              writeConnectionSecretToRef:
+                namespace: {{ $ns }}
+                name: {{ $connSecret }}
+            {{- end }}
+
+            {{/* ================= STORAGE (optional) ================= */}}
+            {{- if $xr.spec.storage }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ printf "%s-%s-data" $ns $name }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                tags:
+                  app: {{ $name }}
+                  team: {{ $ns }}
+              providerConfigRef:
+                name: default
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket-pab" }}
+            spec:
+              forProvider:
+                region: {{ $region }}
+                bucket: {{ printf "%s-%s-data" $ns $name }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+              providerConfigRef:
+                name: default
+            {{- end }}
+
+            {{/* ============ THE APPLICATION ITSELF ============
+                 In Crossplane v1 this needed provider-kubernetes and an Object
+                 wrapper. In v2 a namespaced XR composes it directly. */}}
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "deployment" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+              labels:
+                app: {{ $name }}
+            spec:
+              replicas: {{ $xr.spec.replicas | default 2 }}
+              selector:
+                matchLabels:
+                  app: {{ $name }}
+              template:
+                metadata:
+                  labels:
+                    app: {{ $name }}
+                spec:
+                  {{- if $xr.spec.database }}
+                  {{/*
+                    Wait for the database rather than crash-looping. This keeps
+                    the app's own logs clean and is more readable than
+                    function-sequencer -- see README section 4.
+                  */}}
+                  initContainers:
+                    - name: wait-for-db
+                      image: busybox:1.36
+                      command:
+                        - sh
+                        - -c
+                        - |
+                          until nc -z "$DB_HOST" "$DB_PORT"; do
+                            echo "waiting for database at $DB_HOST:$DB_PORT..."
+                            sleep 3
+                          done
+                          echo "database is up"
+                      env:
+                        - name: DB_HOST
+                          valueFrom:
+                            secretKeyRef:
+                              name: {{ $connSecret }}
+                              key: endpoint
+                        - name: DB_PORT
+                          valueFrom:
+                            secretKeyRef:
+                              name: {{ $connSecret }}
+                              key: port
+                  {{- end }}
+                  containers:
+                    - name: app
+                      image: {{ $xr.spec.image }}
+                      ports:
+                        - containerPort: 8080
+                      env:
+                        - name: APP_NAME
+                          value: {{ $name }}
+                        {{- if $xr.spec.database }}
+                        {{/*
+                          THE SEAM IS GONE. These values come straight from the
+                          Secret the RDS instance wrote. No human, no ticket, no
+                          copy-paste, no external secrets operator.
+                        */}}
+                        - name: DB_HOST
+                          valueFrom:
+                            secretKeyRef:
+                              name: {{ $connSecret }}
+                              key: endpoint
+                        - name: DB_PORT
+                          valueFrom:
+                            secretKeyRef:
+                              name: {{ $connSecret }}
+                              key: port
+                        - name: DB_USER
+                          valueFrom:
+                            secretKeyRef:
+                              name: {{ $connSecret }}
+                              key: username
+                        - name: DB_PASSWORD
+                          valueFrom:
+                            secretKeyRef:
+                              name: {{ $connSecret }}
+                              key: password
+                        {{- end }}
+                        {{- if $xr.spec.storage }}
+                        - name: BUCKET_NAME
+                          value: {{ printf "%s-%s-data" $ns $name }}
+                        {{- end }}
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 64Mi
+                        limits:
+                          memory: 256Mi
+                      readinessProbe:
+                        httpGet:
+                          path: /healthz
+                          port: 8080
+                        initialDelaySeconds: 5
+                        periodSeconds: 5
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "service" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+            spec:
+              selector:
+                app: {{ $name }}
+              ports:
+                - port: 80
+                  targetPort: 8080
+
+            {{- if $xr.spec.host }}
+            ---
+            apiVersion: networking.k8s.io/v1
+            kind: Ingress
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "ingress" }}
+              name: {{ $name }}
+              namespace: {{ $ns }}
+            spec:
+              ingressClassName: nginx
+              rules:
+                - host: {{ $xr.spec.host }}
+                  http:
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: {{ $name }}
+                            port:
+                              number: 80
+            {{- end }}
+
+            {{/* ================= STATUS ================= */}}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XWebApp
+            status:
+              {{- if $xr.spec.host }}
+              url: {{ printf "http://%s" $xr.spec.host }}
+              {{- end }}
+              {{- if $xr.spec.storage }}
+              bucketName: {{ printf "%s-%s-data" $ns $name }}
+              {{- end }}
+              {{- if $xr.spec.database }}
+              {{/* Guard the cross-resource read: on the first reconcile the
+                   database does not exist yet and this lookup is nil. */}}
+              {{- $db := index .observed.resources "database" }}
+              {{- if $db }}
+              {{- $ep := dig "status" "atProvider" "endpoint" "" $db.resource }}
+              {{- if $ep }}
+              databaseEndpoint: {{ $ep }}
+              {{- end }}
+              {{- end }}
+              {{- end }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

@@ -1,0 +1,14 @@
+# The same API with the optional pieces turned off: no database, no bucket,
+# no Ingress. The composition renders only a Deployment and a Service.
+#
+# Compare `crossplane trace` output between this and xr-app.yaml.
+apiVersion: platform.acme.io/v1alpha1
+kind: XWebApp
+metadata:
+  name: static-api
+  namespace: team-payments
+spec:
+  image: xp-course/sample-app:1.0
+  replicas: 1
+  database: false
+  storage: false
