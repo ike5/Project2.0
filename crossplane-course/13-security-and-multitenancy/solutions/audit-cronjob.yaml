@@ -1,0 +1,176 @@
+# Challenge 13 Task 4 — the RBAC audit, on a schedule.
+#
+# It COMPARES AGAINST YESTERDAY rather than just reporting today's state,
+# because "what changed" is the whole signal. An absolute report cannot tell
+# you whether a cluster-admin binding is new (an incident) or has been there
+# for a year (a backlog item).
+#
+# PAGE AT 3AM when a control that was PRESENT has DISAPPEARED, or a new
+# privileged binding appears: that is either an attack or an unmanaged change.
+#
+# WAIT UNTIL MORNING when a control was NEVER there: the exposure already
+# existed all day, and waking someone does not reduce it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rbac-auditor
+  namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rbac-auditor
+rules:
+  # Read-only on the things it audits. An auditor that can change what it
+  # audits is not an auditor.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts", "namespaces", "resourcequotas"]
+    verbs: ["get", "list"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+    verbs: ["get", "list"]
+  - apiGroups: ["aws.upbound.io"]
+    resources: ["providerconfigs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rbac-auditor-state
+  namespace: crossplane-system
+rules:
+  # Write access scoped to TWO ConfigMaps by name: today's findings and the
+  # previous run's state, which is what makes diffing possible.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["rbac-audit-report", "rbac-audit-state"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rbac-auditor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rbac-auditor
+subjects:
+  - kind: ServiceAccount
+    name: rbac-auditor
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rbac-auditor-state
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rbac-auditor-state
+subjects:
+  - kind: ServiceAccount
+    name: rbac-auditor
+    namespace: crossplane-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rbac-audit
+  namespace: crossplane-system
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: rbac-auditor
+          restartPolicy: OnFailure
+          containers:
+            - name: audit
+              image: bitnami/kubectl:1.31
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  URGENT=""
+                  ROUTINE=""
+
+                  # ---- Current privileged bindings ----
+                  CURRENT=$(kubectl get clusterrolebindings -o json | jq -r '
+                    .items[]
+                    | select(.roleRef.name | test("^(cluster-admin|admin|edit)$"))
+                    | "\(.metadata.name)|\(.roleRef.name)|\([.subjects[]?.name] | join(","))"
+                  ' | sort)
+
+                  # ---- Compare with the previous run ----
+                  PREVIOUS=$(kubectl get configmap rbac-audit-state \
+                    -o jsonpath='{.data.privileged}' 2>/dev/null || echo "")
+
+                  if [ -n "$PREVIOUS" ]; then
+                    NEW=$(comm -13 <(echo "$PREVIOUS") <(echo "$CURRENT") || true)
+                    if [ -n "$NEW" ]; then
+                      # A NEW privileged binding is a delta -> page.
+                      URGENT="${URGENT}
+                  [PAGE] New privileged ClusterRoleBinding(s) since the last run:
+                  ${NEW}"
+                    fi
+                  fi
+
+                  # ---- Break-glass bindings left active ----
+                  NOW=$(date -u +%s)
+                  STALE=$(kubectl get clusterrolebindings -o json | jq -r --argjson now "$NOW" '
+                    .items[]
+                    | select(.metadata.name | startswith("break-glass"))
+                    | select(($now - (.metadata.creationTimestamp | fromdateiso8601)) > 3600)
+                    | "  \(.metadata.name) active for \(((($now - (.metadata.creationTimestamp | fromdateiso8601)) / 3600) | floor))h"')
+                  if [ -n "$STALE" ]; then
+                    URGENT="${URGENT}
+                  [PAGE] Break-glass bindings not revoked:
+                  ${STALE}"
+                  fi
+
+                  # ---- Missing controls: real, but not a delta ----
+                  POLICIES=$(kubectl get validatingadmissionpolicy --no-headers 2>/dev/null | wc -l)
+                  if [ "$POLICIES" -eq 0 ]; then
+                    ROUTINE="${ROUTINE}
+                  [MORNING] No ValidatingAdmissionPolicies exist. The guardrails
+                            RBAC cannot express are absent."
+                  fi
+
+                  for ns in $(kubectl get ns -l acme.io/tenant -o jsonpath='{.items[*].metadata.name}'); do
+                    if [ "$(kubectl get resourcequota -n "$ns" --no-headers 2>/dev/null | wc -l)" -eq 0 ]; then
+                      ROUTINE="${ROUTINE}
+                  [MORNING] Namespace ${ns} has no ResourceQuota."
+                    fi
+                  done
+
+                  REPORT="RBAC audit $(date -u +%FT%TZ)
+                  ${URGENT:-
+                  No urgent findings.}
+                  ${ROUTINE:-
+                  No routine findings.}"
+
+                  echo "$REPORT"
+
+                  kubectl create configmap rbac-audit-report \
+                    --from-literal=report="$REPORT" \
+                    --dry-run=client -o yaml | kubectl apply -f -
+
+                  # Persist today's state so tomorrow can diff against it.
+                  kubectl create configmap rbac-audit-state \
+                    --from-literal=privileged="$CURRENT" \
+                    --dry-run=client -o yaml | kubectl apply -f -
+
+                  # Non-zero exit so alerting on job failure catches the urgent case.
+                  [ -z "$URGENT" ] || exit 1

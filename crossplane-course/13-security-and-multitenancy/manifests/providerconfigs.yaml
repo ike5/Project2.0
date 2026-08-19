@@ -1,0 +1,65 @@
+# Per-tenant cloud identity — the boundary that actually holds.
+#
+# Namespace isolation controls WHO CAN ASK. It does nothing about what AWS
+# permits: without this, both tenants' resources go through the same
+# ProviderConfig into the same account with the same permissions.
+#
+# With a ProviderConfig per tenant, backed by a distinct IAM role, a
+# MISCONFIGURATION IN YOUR CLUSTER CAN NO LONGER GRANT CROSS-TENANT ACCESS,
+# because AWS is the one saying no.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: tenant-alpha
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds
+      key: creds
+  endpoint:
+    hostnameImmutable: true
+    url:
+      type: Static
+      static: http://moto.aws-local.svc.cluster.local:5000
+  skip_credentials_validation: true
+  skip_metadata_api_check: true
+  skip_requesting_account_id: true
+  skip_region_validation: true
+  s3_use_path_style: true
+#
+# ON REAL AWS this is where the isolation lives. Replace the above with:
+#
+#   spec:
+#     credentials:
+#       source: IRSA
+#     assumeRoleChain:
+#       - roleARN: arn:aws:iam::444444444444:role/TenantAlphaProvisioner
+#
+# ...where account 444444444444 belongs to tenant alpha and its role's trust
+# policy names ONLY this control plane. Tenant beta gets a different account.
+# Separate ACCOUNTS beat separate IAM roles within one account: intra-account
+# boundaries are permeable in subtle ways, account boundaries are not.
+---
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: tenant-beta
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds
+      key: creds
+  endpoint:
+    hostnameImmutable: true
+    url:
+      type: Static
+      static: http://moto.aws-local.svc.cluster.local:5000
+  skip_credentials_validation: true
+  skip_metadata_api_check: true
+  skip_requesting_account_id: true
+  skip_region_validation: true
+  s3_use_path_style: true

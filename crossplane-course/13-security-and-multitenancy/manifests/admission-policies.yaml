@@ -1,0 +1,143 @@
+# The guardrails RBAC cannot express.
+#
+# RBAC answers "may this identity perform this verb on this kind?" It cannot say
+# "only if the field is under 100", "not in production", or "the environment
+# must match the namespace". ValidatingAdmissionPolicy can, using CEL.
+#
+# These run in the API server, so they apply to EVERY client -- kubectl, Argo
+# CD, a controller, a script -- with no way to bypass them.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: no-deleting-production
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["platform.acme.io"]
+        apiVersions: ["*"]
+        operations: ["DELETE"]
+        resources: ["xdatabases", "xbuckets"]
+  validations:
+    # On DELETE, `object` is null and `oldObject` holds what is being removed.
+    - expression: >-
+        oldObject.spec.environment != 'prod'
+      message: >-
+        Production resources cannot be deleted directly. Follow the break-glass
+        procedure in RUNBOOK-114 (kubectl get cm break-glass-procedure -n crossplane-system).
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: no-deleting-production
+spec:
+  policyName: no-deleting-production
+  validationActions: [Deny]
+---
+# Stop a tenant provisioning into an environment their namespace is not part of.
+#
+# The namespace label is platform-managed and developers cannot patch it, so
+# this pins environment to something they cannot forge.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: environment-matches-namespace
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["platform.acme.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["xdatabases", "xbuckets"]
+  paramKind:
+    apiVersion: v1
+    kind: Namespace
+  validations:
+    - expression: >-
+        !has(object.spec.environment) ||
+        object.spec.environment == params.metadata.labels['acme.io/environment']
+      message: >-
+        spec.environment must match your namespace's acme.io/environment label.
+        You cannot provision into an environment your namespace is not part of.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: environment-matches-namespace
+spec:
+  policyName: environment-matches-namespace
+  validationActions: [Deny]
+  paramRef:
+    # The Namespace object matched is the one the XR is being created in.
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: acme.io/environment
+          operator: Exists
+---
+# Block the privilege-escalation route from Module 08: a developer who can
+# create IAM roles through a platform API could otherwise request one with
+# administrator permissions.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: no-wildcard-iam
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["iam.aws.upbound.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["policies", "rolepolicies", "userpolicies"]
+  validations:
+    - expression: >-
+        !object.spec.forProvider.policy.contains('"Action": "*"') &&
+        !object.spec.forProvider.policy.contains('"Action":"*"')
+      message: >-
+        IAM policies may not grant Action "*". Name the actions you need.
+    - expression: >-
+        !object.spec.forProvider.policy.contains('"iam:*"')
+      message: >-
+        IAM policies may not grant iam:* -- that is a privilege escalation path
+        (an identity that can modify IAM can grant itself anything).
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: no-wildcard-iam
+spec:
+  policyName: no-wildcard-iam
+  validationActions: [Deny]
+---
+# Every platform resource must carry an owner, so cloud spend and incidents can
+# be attributed. Unattributable infrastructure is how accounts fill with
+# resources nobody will admit to and nobody dares delete.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-owner-label
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["platform.acme.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE"]
+        resources: ["*"]
+  validations:
+    - expression: >-
+        has(object.metadata.labels) && 'acme.io/owner' in object.metadata.labels
+      message: >-
+        Every platform resource must carry an acme.io/owner label naming the
+        team or individual responsible for it.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-owner-label
+spec:
+  policyName: require-owner-label
+  validationActions: [Deny]

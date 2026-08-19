@@ -1,0 +1,82 @@
+# A composition that picks its cloud identity FROM THE XR'S NAMESPACE.
+#
+# The developer cannot influence which ProviderConfig is used, because they
+# cannot change which namespace they are in. Compare with a composition that
+# reads spec.providerConfig from the XR -- that would hand the choice of cloud
+# account to the person you are isolating.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbucket-tenant-scoped
+  labels:
+    provider: aws
+    tenancy: scoped
+spec:
+  compositeTypeRef:
+    apiVersion: platform.acme.io/v1alpha1
+    kind: XBucket
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $ns := $xr.metadata.namespace -}}
+            {{- $name := $xr.metadata.name -}}
+            {{/*
+              THE KEY LINE. The ProviderConfig -- and therefore the AWS account
+              and permissions -- is derived from the namespace, which the
+              developer cannot choose from inside their own XR.
+            */}}
+            {{- $providerConfig := $ns -}}
+            {{/*
+              Bucket names are prefixed with the tenant too, so even a bug that
+              let one tenant name another's bucket would collide rather than
+              silently adopt it.
+            */}}
+            {{- $bucket := printf "%s-%s" $ns $name -}}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "bucket" }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider:
+                region: us-east-1
+                tags:
+                  tenant: {{ $ns }}
+                  environment: {{ $xr.spec.environment }}
+              providerConfigRef:
+                name: {{ $providerConfig }}
+            ---
+            apiVersion: s3.aws.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                {{ setResourceNameAnnotation "pab" }}
+            spec:
+              forProvider:
+                region: us-east-1
+                bucket: {{ $bucket }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+              providerConfigRef:
+                name: {{ $providerConfig }}
+            ---
+            apiVersion: platform.acme.io/v1alpha1
+            kind: XBucket
+            status:
+              bucketName: {{ $bucket }}
+    - step: ready
+      functionRef:
+        name: function-auto-ready

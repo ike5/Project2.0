@@ -1,0 +1,59 @@
+# Deletion as a deliberate, audited act rather than a routine permission.
+#
+# Developers cannot delete XRs. When a deletion is genuinely needed, a human
+# binds themselves to this role, performs the deletion, and unbinds. Every step
+# appears in the audit log with a name attached.
+#
+# The point is not that deletion is impossible -- it is that it cannot happen
+# ABSENTMINDEDLY, which is how almost every accidental deletion happens.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-break-glass
+  annotations:
+    acme.io/description: >-
+      Grants deletion of platform XRs. Bind yourself to this ONLY for the
+      duration of an approved deletion, and unbind immediately afterwards.
+      Every use is reviewed weekly.
+rules:
+  - apiGroups: ["platform.acme.io"]
+    resources: ["*"]
+    verbs: ["delete"]
+  # Removing a Usage lock is also break-glass: it is what stands between a
+  # delete request and production data (Module 10).
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: ["usages"]
+    verbs: ["delete"]
+---
+# Deliberately NOT bound to anyone. Binding is the break-glass act:
+#
+#   kubectl create clusterrolebinding break-glass-$USER-$(date +%s) \
+#     --clusterrole=platform-break-glass --user="$USER"
+#   # ...perform the deletion...
+#   kubectl delete clusterrolebinding break-glass-$USER-...
+#
+# A weekly job should report any binding older than an hour: a break-glass
+# grant that was never revoked is just a permanent permission with extra steps.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: break-glass-procedure
+  namespace: crossplane-system
+data:
+  RUNBOOK.md: |
+    # Break-glass deletion procedure
+
+    1. Get approval in #platform-approvals. Record the ticket number.
+    2. Confirm what will be destroyed:
+         crossplane trace <kind> <name> -n <ns>
+         kubectl get <kind> <name> -n <ns> -o jsonpath='{.spec.crossplane.resourceRefs}'
+    3. Check for Orphan settings -- resources with deletionPolicy: Orphan will
+       survive and become UNMANAGED. You must clean them up separately or they
+       become unowned cloud spend.
+    4. Bind yourself:
+         kubectl create clusterrolebinding break-glass-$USER-$(date +%s) \
+           --clusterrole=platform-break-glass --user="$USER"
+    5. Delete.
+    6. UNBIND IMMEDIATELY:
+         kubectl delete clusterrolebinding break-glass-$USER-<timestamp>
+    7. Record in the change log: what, why, ticket, who approved.

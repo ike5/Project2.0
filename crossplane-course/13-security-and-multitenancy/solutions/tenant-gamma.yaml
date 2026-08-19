@@ -1,0 +1,118 @@
+# Challenge 13 Task 3 — a contractor tenant with four extra restrictions.
+#
+#   1. May create XBucket, never XDatabase   -> RBAC resource list
+#   2. Capped at 2 buckets                   -> ResourceQuota
+#   3. Must carry a contract-end-date label  -> ValidatingAdmissionPolicy
+#   4. Cannot read connection secrets        -> RBAC omission
+#
+# Four restrictions, four different mechanisms. That is normal: no single
+# mechanism expresses all of them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-gamma
+  labels:
+    acme.io/tenant: gamma
+    acme.io/environment: dev
+    acme.io/tenant-type: contractor
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+  namespace: tenant-gamma
+spec:
+  hard:
+    count/xbuckets.platform.acme.io: "2"
+    # Belt and braces: even if RBAC were widened by mistake, the quota is zero.
+    count/xdatabases.platform.acme.io: "0"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: contractor
+  namespace: tenant-gamma
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: contractor-user
+  namespace: tenant-gamma
+rules:
+  # RESTRICTION 1: xbuckets only. xdatabases is simply not listed.
+  - apiGroups: ["platform.acme.io"]
+    resources: ["xbuckets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # Read-only visibility for debugging.
+  - apiGroups: ["s3.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  #
+  # RESTRICTION 4: NO rule for secrets, anywhere.
+  # Contractors get infrastructure but never credentials. If they need a
+  # database they cannot have one (restriction 1), and if a bucket needs
+  # credentials, an employee wires it up.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: contractor-user
+  namespace: tenant-gamma
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: contractor-user
+subjects:
+  - kind: ServiceAccount
+    name: contractor
+    namespace: tenant-gamma
+---
+# RESTRICTION 3: a contract end date on every resource.
+#
+# Contractor infrastructure that outlives the contract is a boring, common
+# source of both cost and risk. Requiring the label makes it QUERYABLE:
+#
+#   kubectl get xbuckets -A -o json | jq -r --arg today "$(date +%F)" '
+#     .items[] | select(.metadata.labels["contract-end-date"] // "9999" < $today)
+#     | "\(.metadata.namespace)/\(.metadata.name)"'
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: contractor-end-date
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["platform.acme.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["*"]
+  validations:
+    - expression: >-
+        has(object.metadata.labels) &&
+        'contract-end-date' in object.metadata.labels
+      message: >-
+        Contractor resources must carry a contract-end-date label (YYYY-MM-DD)
+        so they can be reclaimed when the engagement ends.
+    - expression: >-
+        !has(object.metadata.labels) ||
+        !('contract-end-date' in object.metadata.labels) ||
+        object.metadata.labels['contract-end-date'].matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      message: >-
+        contract-end-date must be in YYYY-MM-DD format.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: contractor-end-date
+spec:
+  policyName: contractor-end-date
+  validationActions: [Deny]
+  # Applies ONLY to contractor namespaces, so employee teams are unaffected.
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        acme.io/tenant-type: contractor

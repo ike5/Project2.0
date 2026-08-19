@@ -1,0 +1,153 @@
+# Two tenants sharing one control plane.
+#
+# Namespaces, quotas, service accounts, and RBAC. Read the comments on what is
+# DELIBERATELY ABSENT from the developer role -- the omissions are the security.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-alpha
+  labels:
+    acme.io/tenant: alpha
+    # Platform-managed. Developers have no RBAC to patch namespace labels, so
+    # this is a fact they cannot forge (Module 10 challenge task 3).
+    acme.io/environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-beta
+  labels:
+    acme.io/tenant: beta
+    acme.io/environment: dev
+---
+# ─────────────── QUOTAS ───────────────
+# Without these, one tenant can create 10,000 XRs, exhaust the AWS API rate
+# limit, and degrade EVERY tenant. A quota turns a platform-wide outage into
+# one team getting a clear error.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+  namespace: tenant-alpha
+spec:
+  hard:
+    count/xbuckets.platform.acme.io: "5"
+    count/xdatabases.platform.acme.io: "2"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+  namespace: tenant-beta
+spec:
+  hard:
+    count/xbuckets.platform.acme.io: "5"
+    count/xdatabases.platform.acme.io: "2"
+---
+# ─────────────── IDENTITIES ───────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: developer
+  namespace: tenant-alpha
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: developer
+  namespace: tenant-beta
+---
+# ─────────────── THE DEVELOPER ROLE ───────────────
+# Namespaced, so it grants nothing outside the tenant's own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-user
+  namespace: tenant-alpha
+rules:
+  # The platform APIs. This is the ONLY way a developer creates infrastructure.
+  - apiGroups: ["platform.acme.io"]
+    resources: ["xbuckets", "xdatabases"]
+    # NOTE THE ABSENCE OF "delete". Deletion is a break-glass operation
+    # performed by a separate, audited role -- see break-glass.yaml.
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # Read their own connection secrets, so their apps can be wired up.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  # Read-only visibility into what their XR produced, for debugging.
+  - apiGroups: ["s3.aws.upbound.io", "rds.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+#
+# WHAT IS DELIBERATELY ABSENT, and why:
+#
+#   CREATE on managed resources (s3.aws.upbound.io/buckets, etc.)
+#     A raw Bucket bypasses EVERY guarantee the composition makes: encryption,
+#     public access blocking, tagging, naming, lifecycle. The platform API is
+#     the security boundary; direct managed-resource access is a hole straight
+#     through it. This is the single most important omission on this list.
+#
+#   Anything in crossplane-system
+#     That namespace holds the provider's cloud credentials.
+#
+#   compositions / compositeresourcedefinitions
+#     A developer who can edit a Composition can make it do anything, for
+#     everyone, in every namespace.
+#
+#   providerconfigs
+#     Reading one reveals which credentials exist; referencing another tenant's
+#     is a direct route into their account.
+#
+#   delete on XRs
+#     See break-glass.yaml.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-user
+  namespace: tenant-beta
+rules:
+  - apiGroups: ["platform.acme.io"]
+    resources: ["xbuckets", "xdatabases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["s3.aws.upbound.io", "rds.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-user
+  namespace: tenant-alpha
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-user
+subjects:
+  - kind: ServiceAccount
+    name: developer
+    namespace: tenant-alpha
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-user
+  namespace: tenant-beta
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-user
+subjects:
+  - kind: ServiceAccount
+    name: developer
+    namespace: tenant-beta
