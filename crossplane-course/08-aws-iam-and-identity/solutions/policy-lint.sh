@@ -83,12 +83,24 @@ def check(doc):
     return problems
 
 
-checked = failed = 0
+checked = failed = skipped = 0
 for d in yaml.safe_load_all(sys.stdin):
     if not isinstance(d, dict):
         continue
     fp = (d.get("spec") or {}).get("forProvider") or {}
-    name = (d.get("metadata") or {}).get("name") or fp.get("name") or "<unnamed>"
+    meta = d.get("metadata") or {}
+    name = meta.get("name") or fp.get("name") or "<unnamed>"
+
+    # A PERMISSIONS BOUNDARY IS A CEILING, NOT A GRANT. Its breadth is the
+    # point: it caps what attached policies can achieve and grants nothing on
+    # its own. Flagging it for wildcards would be a false positive, so a
+    # boundary must opt out explicitly -- and reviewers should check that the
+    # opt-out is honest.
+    if (meta.get("annotations") or {}).get("policy-lint/kind") == "boundary":
+        skipped += 1
+        print(f"▶ {name:<55} ⏭  boundary (breadth checks skipped)")
+        continue
+
     for key in ("policy", "assumeRolePolicy"):
         raw = fp.get(key)
         if not isinstance(raw, str) or not raw.strip().startswith("{"):
@@ -111,7 +123,10 @@ for d in yaml.safe_load_all(sys.stdin):
             print(f"▶ {label:<55} ✅")
 
 print()
-print(f"{checked} policy document(s) checked, {failed} failed")
+summary = f"{checked} policy document(s) checked, {failed} failed"
+if skipped:
+    summary += f", {skipped} boundary policy(ies) skipped"
+print(summary)
 sys.exit(1 if failed else 0)
 PY
 

@@ -8,6 +8,12 @@ apiVersion: iam.aws.upbound.io/v1beta1
 kind: Policy
 metadata:
   name: app-identity-boundary
+  annotations:
+    # Opt out of the linter's breadth checks. A boundary is DELIBERATELY broad:
+    # it is an upper bound on what attached policies can achieve, and grants
+    # nothing by itself. Reviewers should still check this opt-out is honest --
+    # it is the one place the linter trusts the author.
+    policy-lint/kind: boundary
 spec:
   forProvider:
     name: AppIdentityBoundary

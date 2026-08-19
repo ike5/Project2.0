@@ -251,3 +251,32 @@ Running it on rendered output rather than on the composition source matters: the
 policy is *generated*, so bugs live in the template logic and only appear after
 rendering. Pair it with `aws accessanalyzer validate-policy` in a job that has AWS
 credentials — that catches AWS-specific grammar this script can't know about.
+
+**One false positive, and what it teaches.** Run the linter against
+[`boundary.yaml`](./boundary.yaml) from Task 1 and it fails: the boundary grants
+`s3:*` and `dynamodb:*` on `"*"`, which looks exactly like the over-broad policy the
+linter exists to catch.
+
+But a **permissions boundary is a ceiling, not a grant**. Its breadth is the entire
+point — it caps what attached policies can achieve and confers nothing on its own.
+The linter is checking the right thing and reaching the wrong conclusion, because it
+can't tell a grant from a cap by looking at the JSON.
+
+The fix is an explicit opt-out:
+```yaml
+metadata:
+  annotations:
+    policy-lint/kind: boundary
+```
+
+Two things worth taking from this:
+
+1. **A linter without an escape hatch gets disabled.** The first time a correct
+   policy fails CI, someone adds `|| true` to the job and the check is gone forever.
+   A narrow, greppable, reviewable opt-out keeps the check alive.
+2. **Make the opt-out visible in review.** `grep -r 'policy-lint/kind: boundary'`
+   should return a handful of results that a human has actually looked at. An
+   annotation nobody audits is just a slower `|| true`.
+
+This generalises well beyond IAM: any automated policy check will meet legitimate
+exceptions, and how you handle the *first* one determines whether the check survives.
