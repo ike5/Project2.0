@@ -1,0 +1,28 @@
+# A 3-node kind cluster for the Crossplane course.
+#
+# Why 3 nodes? Crossplane itself, the provider pods, LocalStack, and (from Module 14)
+# Argo CD add up. Spreading them over workers keeps any one node from thrashing, and
+# lets you see real scheduling behaviour when a provider pod restarts.
+#
+# Ports 80/443 are mapped so the Ingress you create in Module 06 is reachable from
+# your browser at http://localhost.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: xp-course
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+  - role: worker

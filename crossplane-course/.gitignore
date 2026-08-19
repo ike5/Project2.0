@@ -1,0 +1,15 @@
+# Rendered composition output from `crossplane render` experiments
+rendered.yaml
+*.rendered.yaml
+
+# Built packages
+*.xpkg
+
+# Local kubeconfig / credential material — never commit real secrets
+*.kubeconfig
+*.local.yaml
+creds.txt
+aws-credentials
+
+# Editor noise
+.DS_Store

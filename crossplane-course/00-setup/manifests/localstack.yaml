@@ -1,0 +1,82 @@
+# LocalStack — a local emulator of the AWS APIs.
+#
+# This is what makes the whole course free. The Crossplane AWS provider makes
+# genuine AWS SDK calls; we simply point them at this Service instead of at
+# amazonaws.com. The YAML you write in every lab is byte-for-byte what you would
+# apply against a real AWS account.
+#
+# It runs INSIDE the cluster because the provider pod (not your laptop) is what
+# makes the API calls — it needs a DNS name it can reach from a Pod.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: localstack
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: localstack
+  namespace: localstack
+  labels:
+    app: localstack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: localstack
+  template:
+    metadata:
+      labels:
+        app: localstack
+    spec:
+      containers:
+        - name: localstack
+          image: localstack/localstack:3.8
+          ports:
+            - containerPort: 4566
+              name: edge
+          env:
+            # Only start the services this course uses. Booting all of them is slow
+            # and memory-hungry; this list grows as the course does.
+            - name: SERVICES
+              value: "s3,iam,sts,ec2,rds,dynamodb,sqs,sns,kms,secretsmanager"
+            - name: DEBUG
+              value: "0"
+            # Keep data in the container's filesystem. Deleting the Pod resets AWS
+            # to empty, which is a feature: it is how you reset a broken lab.
+            - name: PERSISTENCE
+              value: "0"
+          readinessProbe:
+            httpGet:
+              path: /_localstack/health
+              port: 4566
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /_localstack/health
+              port: 4566
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: localstack
+  namespace: localstack
+spec:
+  selector:
+    app: localstack
+  ports:
+    - name: edge
+      port: 4566
+      targetPort: 4566
+# In-cluster DNS name (you will use this constantly):
+#   http://localstack.localstack.svc.cluster.local:4566
