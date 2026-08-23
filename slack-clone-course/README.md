@@ -31,6 +31,12 @@ webhooks for integrations, all built and shipped on your own machine, for free.
   Postgres, a Redis operator for Redis — then *kill the database primary on purpose*
   and watch it heal.
 
+> **Companion course:** [Chat at Scale](../spring-boot-chat-course/) builds the
+> same real-time chat domain on **Spring Boot + Redis Streams** instead of Django
+> Channels. Working both is genuinely valuable — you see how a different runtime
+> model (JVM virtual threads vs Python ASGI) solves identical problems, and where
+> the solutions converge.
+
 ---
 
 ## Prerequisites
