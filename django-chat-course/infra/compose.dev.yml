@@ -1,0 +1,169 @@
+# infra/compose.dev.yml — the Phase 0–1 development data tier.
+#
+# This is the stack Modules 00–12 run against: one Postgres, one Redis, nothing
+# clever. It is deliberately *small* — the whole point of Phases 0 and 1 is to
+# find the ceiling of a single node, and you cannot find a ceiling you have
+# already engineered around.
+#
+#   docker compose -p pulse-dev -f compose.dev.yml up -d
+#   docker compose -p pulse-dev -f compose.dev.yml ps
+#   docker compose -p pulse-dev -f compose.dev.yml down -v      # note the -v
+#
+# VERIFY.md (§10) is the smoke test for this file. It asserts the container
+# names, the credentials, and the two deliberate settings below — if you rename
+# anything here, fix VERIFY.md too.
+#
+# Later phases replace this file rather than extending it:
+#   Module 13  -> a replica + PgBouncer            (infra/compose.replica.yml)
+#   Module 14  -> shard pair + ScyllaDB            (infra/compose.shards.yml, compose.scylla.yml)
+#   Module 16  -> Kafka in KRaft mode              (infra/compose.kafka.yml)
+#   Module 18  -> the 15-container HA stack        (infra/ha/compose.ha.yml)
+#   Module 20  -> Prometheus/Grafana/Tempo/Loki    (infra/obs/compose.obs.yml)
+
+name: pulse-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pulse-postgres
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: pulse
+      # Skip fsync-per-commit cost during local development ONLY. This makes
+      # your write benchmarks optimistic; Module 12 says so explicitly and
+      # re-measures with fsync on before quoting any durability number.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      # -------------------------------------------------------------------
+      # Deliberate setting #1: log every statement slower than 200 ms.
+      #
+      # This is your first profiling signal and it costs nothing at dev
+      # volumes. Module 12 has you scroll a 10-million-row table and watch
+      # this log fill up with the sequential scan you didn't know you wrote;
+      # Module 13 watches it go quiet after the partition prune. 200 ms is
+      # chosen to be well above a healthy indexed lookup (~1 ms) and well
+      # below the point where a human notices (~500 ms), so the log contains
+      # only things worth reading.
+      # -------------------------------------------------------------------
+      - -c
+      - log_min_duration_statement=200
+      - -c
+      - log_line_prefix=%m [%p] %q%u@%d
+      # Enough headroom that the Module 12/13 benchmarks aren't measuring an
+      # artificially starved cache. Still small enough for a laptop.
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=200
+      # Module 13 needs logical/streaming replication primitives available the
+      # moment you add a replica; turning it on now avoids a restart later.
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+    ports:
+      # Published so you can run Django on the host against containerized data.
+      # Change the host side if 5432 is taken by a system Postgres.
+      - "5432:5432"
+    volumes:
+      - pulse-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready is the right probe: it speaks the startup protocol, so it
+      # returns success only once Postgres is actually accepting connections —
+      # not merely once the process exists. `-d pulse` matters: the server
+      # answers on the postgres database before the initdb-created `pulse`
+      # database is ready during first boot.
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: pulse-redis
+    command:
+      - redis-server
+      # -------------------------------------------------------------------
+      # Deliberate setting #2, and the one worth arguing about:
+      #
+      #     --maxmemory-policy noeviction
+      #
+      # Redis in this course is not a cache. It holds the channel layer, the
+      # per-room sequence counters (Module 05), the Streams fan-out log
+      # (Module 09), presence keys (Module 11), rate-limit buckets, and the
+      # single-use auth tickets (Module 21). *Every one of those is a
+      # correctness surface.*
+      #
+      # With an eviction policy (`allkeys-lru` and friends), memory pressure
+      # makes Redis quietly delete whichever key it feels like. Lose a
+      # sequence counter and every client sees a gap and triggers a resume
+      # storm. Lose a presence key and a user appears offline. Lose a stream
+      # entry and a message is gone with no error anywhere. **Silent partial
+      # data loss is the worst possible failure mode for a message backbone**,
+      # because nothing logs, nothing alerts, and the symptom surfaces days
+      # later as "sometimes messages don't arrive."
+      #
+      # `noeviction` converts that into a loud, immediate, attributable
+      # failure: writes start returning OOM errors, your consumer raises, your
+      # alert fires, and you go fix the memory sizing. A visible outage beats
+      # invisible corruption every single time.
+      #
+      # (Module 08 argues the other side for genuinely cache-shaped data, and
+      # Module 09 sizes the Streams memory budget so you don't hit the wall.)
+      # -------------------------------------------------------------------
+      - --maxmemory-policy
+      - noeviction
+      - --maxmemory
+      - 1gb
+      # No persistence in dev. Redis here is a transport and derived state; the
+      # Postgres outbox (Module 13) is the source of truth. Turning RDB/AOF off
+      # removes fork-induced latency spikes from every latency number you
+      # measure in Modules 06–11. Module 08 makes you defend this choice.
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      # Log any command that spends more than 5 ms on the single thread. This
+      # is how Module 08's `KEYS` demonstration shows up as evidence rather
+      # than as a vibe.
+      - --slowlog-log-slower-than
+      - "5000"
+      - --slowlog-max-len
+      - "256"
+    ports:
+      - "6379:6379"
+    volumes:
+      # Named volume even though persistence is off: it keeps the container
+      # writable-dir layout stable and makes turning AOF on in Module 08 a
+      # one-line change instead of a data-loss surprise.
+      - pulse-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    stop_grace_period: 10s
+    # A single Redis is single-threaded (Module 08). Giving it more than a
+    # core or two only hides the moment you saturate that thread, which is a
+    # moment this course wants you to see.
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+volumes:
+  pulse-pgdata:
+  pulse-redisdata:
+
+# Compose creates the default bridge network `pulse-dev_default`. Services
+# reach each other by service name (`postgres`, `redis`) — those are the hosts
+# you put in Django's DATABASES/CHANNEL_LAYERS when the app also runs in
+# Compose. Running Django on the host instead? Use `localhost` and the
+# published ports above.
