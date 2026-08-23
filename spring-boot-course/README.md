@@ -150,6 +150,19 @@ trade-offs are** — not just the `pom.xml` line.
 
 ---
 
+## Where to go next
+
+Once you've built the task tracker here, two courses go deeper:
+
+- **[Chat at Scale](../spring-boot-chat-course/)** — real-time messaging with
+  Spring Boot, Redis Streams, and Docker HA, built the same way: measure every
+  claim, defend every decision. Picks up exactly where this course's Redis and
+  async-messaging modules leave off.
+- **[Kubernetes](../kubernetes-course/)** — orchestrate the containerized app
+  you built here on a real cluster.
+
+---
+
 ## Quick start
 
 ```bash
