@@ -87,10 +87,21 @@ A model is a class; a table is derived from it.
 
 ```python
 class Room(models.Model):
-    slug       = models.SlugField(max_length=64, unique=True)   # "room.7"
+    slug       = models.SlugField(max_length=64, unique=True)   # "general", "7"
     name       = models.CharField(max_length=120)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def key(self) -> str:
+        return f"room.{self.slug}"                              # "room.general"
 ```
+
+> **Note the split between `slug` and `key`.** The slug is the bare handle
+> (`general`, `7`); `key` composes the one string that is *simultaneously* the
+> channel-layer group name, the `room` field in every protocol envelope, and the
+> `room_id` column in the message store. Keeping one composed identifier rather
+> than three hand-built ones is what stops Modules 04, 05, 09 and 12 from
+> disagreeing about what a room is called. The lab builds both.
 
 `makemigrations` diffs your models against the migration history and **writes a
 Python file describing the operations**:
