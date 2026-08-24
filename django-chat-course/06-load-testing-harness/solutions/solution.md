@@ -543,7 +543,7 @@ raw-ASGI version of this and asks the uncomfortable question directly.
 
 ### Comparison with the JVM twin
 
-The JVM twin's [`06-load-testing-harness`](../../spring-boot-chat-course/06-load-testing-harness/)
+The JVM twin's [`06-load-testing-harness`](../../../spring-boot-chat-course/06-load-testing-harness/)
 measured a **450,000 outbound msg/s** knee per node using all eight cores, and
 ~50,000 connections per node.
 

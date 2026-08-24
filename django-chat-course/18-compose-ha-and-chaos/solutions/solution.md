@@ -196,8 +196,8 @@ redis-cli -c -p 7000 CLUSTER KEYSLOT "room:{7}:stream"
 redis-cli -c -p 7000 CLUSTER KEYSLOT "room:{7}:seq"
 ```
 ```
-11267
-11267
+1716
+1716
 ```
 ✅ **Same slot.** `XADD` to the stream and `INCR` on the sequence in one Lua
 script still work, because Module 08 put `{room_id}` in the key names on a single

@@ -125,7 +125,7 @@ Redis executes commands on one thread regardless of how many cores you buy.
 do about it; `io-threads` helps with socket syscalls, not with the 423 µs above.
 
 > **Contrast with the JVM twin**, whose
-> [Task 1](../../spring-boot-chat-course/07-scale-out-redis-pubsub/solutions/solution.md)
+> [Task 1](../../../spring-boot-chat-course/07-scale-out-redis-pubsub/solutions/solution.md)
 > found the same linear amplification and extrapolated ~30–50 *instances*. Your
 > unit is worker processes, so you reach the same wall at 4–6 machines instead
 > of 30–50. Same curve, one-eighth the hardware to get there.

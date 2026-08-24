@@ -176,7 +176,7 @@ print(plain)      # b'hi'
 > replaying a stored response, and nothing more. Authentication has to come from a
 > cookie, a token in the query string or a single-use ticket, or a
 > `Sec-WebSocket-Protocol` value — the WebSocket-auth problem Module 04 sets up
-> and [`21`](../21-security-and-abuse-at-scale/) solves.
+> and [`21`](../../21-security-and-abuse-at-scale/) solves.
 
 ---
 
@@ -361,7 +361,7 @@ each with its own ordering, so a loss on one doesn't block the others.
 | Message type | Datagram? | Why |
 |--------------|-----------|-----|
 | **Typing indicator** | ✅ **Yes** | Superseded every ~2 s. A lost one is invisible. Retransmitting a stale "alice is typing" is actively *worse* than dropping it. |
-| **Presence heartbeat** | ✅ **Yes** | Same logic — it's a TTL refresh; the next one is 15 s away and TTL is 45 s, so you tolerate two losses ([`11`](../11-presence-and-rate-limiting/)). |
+| **Presence heartbeat** | ✅ **Yes** | Same logic — it's a TTL refresh; the next one is 15 s away and TTL is 45 s, so you tolerate two losses ([`11`](../../11-presence-and-rate-limiting/)). |
 | **Cursor / scroll sync** | ✅ Yes | Latest value wins. |
 | **Chat message** | ❌ **No** | Must not be lost, must be ordered. This is precisely what reliable streams are for, and what per-room `seq` (Module 05) protects. |
 | **Read receipt** | ❌ No — but nearly | Idempotent and monotonic (a receipt for seq 50 subsumes one for 40), so a loss self-heals on the next receipt. Rare and small; no throughput argument for datagrams, so keep it on a stream and keep it simple. |
@@ -375,8 +375,8 @@ stream.
 **The takeaway that matters today:** you get most of this benefit *without QUIC*
 by not sending typing indicators through the same ordering guarantees as messages.
 Pulse routes typing over Redis **Pub/Sub** (at-most-once,
-[`07`](../07-scale-out-redis-channel-layer/)) and messages over Redis **Streams**
-(at-least-once, [`09`](../09-redis-streams-delivery/)). Different semantics for
+[`07`](../../07-scale-out-redis-channel-layer/)) and messages over Redis **Streams**
+(at-least-once, [`09`](../../09-redis-streams-delivery/)). Different semantics for
 different traffic is a design decision, not an inconsistency — and it's the
 insight WebTransport would let you push down to the transport layer, if
 Daphne/Uvicorn spoke HTTP/3, which they don't.
