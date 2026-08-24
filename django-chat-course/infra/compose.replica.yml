@@ -1,0 +1,312 @@
+# infra/compose.replica.yml — the Module 13 data tier.
+#
+# compose.dev.yml gave you one Postgres. This file gives you the three pieces
+# Module 13 exists to teach:
+#
+#   pg-primary   all writes, WAL sender, the outbox's source of truth
+#   pg-replica   streaming physical replica, hot standby, target of the Django
+#                database router's read traffic
+#   pgbouncer    transaction-mode pooling in front of the primary — and the
+#                place where psycopg's server-side prepared statements go to die
+#
+# Bring it up (STOP compose.dev.yml first — they publish the same ports):
+#
+#   docker compose -p pulse-dev  -f compose.dev.yml down
+#   docker compose -p pulse-repl -f compose.replica.yml up -d --wait
+#   docker compose -p pulse-repl -f compose.replica.yml --profile pool up -d --wait
+#   docker compose -p pulse-repl -f compose.replica.yml down -v      # note the -v
+#
+# PgBouncer sits behind the `pool` profile on purpose: it needs `pgbouncer.ini`
+# and `userlist.txt`, which lab Part D has you write by hand, one setting at a
+# time, because the settings ARE the lesson. Until then, `up -d` starts the two
+# Postgres instances and Redis and does not complain about missing files.
+#
+# Ports, so you can run Django on the host against containerized data:
+#
+#   5432  pg-primary        writes, and reads before the router exists
+#   5433  pg-replica        the router's "replica" alias — read-only
+#   6432  pgbouncer         transaction-pooled access to the primary
+#   6379  redis             unchanged from compose.dev.yml
+#
+# Replication is set up ONCE, on the replica's first boot, with pg_basebackup -R.
+# There is no magic: `-R` writes `standby.signal` and a `primary_conninfo` line
+# into postgresql.auto.conf, which is exactly what you would do by hand.
+
+name: pulse-repl
+
+x-pg-common: &pg-common
+  image: postgres:16-alpine
+  environment: &pg-env
+    POSTGRES_USER: pulse
+    POSTGRES_PASSWORD: pulse
+    POSTGRES_DB: pulse
+    PGDATA: /var/lib/postgresql/data/pgdata
+    # The replication role's password. Referenced by the primary's init script
+    # and by the replica's pg_basebackup, so it lives in one place.
+    REPL_PASSWORD: replpass
+  stop_grace_period: 30s
+
+services:
+  # ---------------------------------------------------------------------------
+  # PRIMARY
+  # ---------------------------------------------------------------------------
+  postgres-primary:
+    <<: *pg-common
+    container_name: pulse-pg-primary
+    command:
+      - postgres
+      # Carried over from compose.dev.yml — Module 13 watches this log go quiet
+      # after the partition prune, so it has to be the same threshold.
+      - -c
+      - log_min_duration_statement=200
+      - -c
+      - log_line_prefix=%m [%p] %q%u@%d
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      # -----------------------------------------------------------------------
+      # max_connections=200 is DELIBERATELY LEFT SMALL.
+      #
+      # Lab Part D has you exhaust it on purpose: 3 app processes x 8 Uvicorn
+      # workers x a 12-thread database_sync_to_async pool is 288 potential
+      # backends against 200 slots, and Postgres answers with
+      #   FATAL: sorry, too many clients already
+      # That failure is the entire motivation for PgBouncer, and you cannot feel
+      # it if the ceiling is set out of reach.
+      # -----------------------------------------------------------------------
+      - -c
+      - max_connections=200
+      # -----------------------------------------------------------------------
+      # Replication.
+      #
+      # wal_level=replica is the minimum for streaming (compose.dev.yml already
+      # set it so that adding a replica needs no restart — this is that promise
+      # being cashed).
+      #
+      # max_wal_senders: one per replica + one per concurrent pg_basebackup, plus
+      # headroom for Module 18's Patroni cluster.
+      #
+      # wal_keep_size is the crude safety net: keep 512 MB of WAL around so a
+      # replica that falls behind can catch up without a rebuild. The GOOD answer
+      # is a replication slot (below), which never discards WAL a replica still
+      # needs — at the price of filling your disk if the replica never comes
+      # back. Lab Part C makes you experience both failure modes, because
+      # choosing between them is the actual skill.
+      # -----------------------------------------------------------------------
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - wal_keep_size=512MB
+      - -c
+      - hot_standby_feedback=off
+      # Report replay lag every 2 s instead of the 10 s default, so
+      # pg_stat_replication.replay_lag is usable as a live signal in the lab.
+      - -c
+      - wal_receiver_status_interval=2s
+      # -----------------------------------------------------------------------
+      # synchronous_commit stays at `on` (the default). Module 13 argues for
+      # `remote_apply` on the OUTBOX write specifically — and then measures what
+      # it costs, which is why it is not turned on globally here.
+      # -----------------------------------------------------------------------
+      - -c
+      - synchronous_commit=on
+    ports:
+      - "5432:5432"
+    volumes:
+      - pulse-pg-primary:/var/lib/postgresql/data
+    configs:
+      # Runs once, during initdb, before the entrypoint's final restart — so the
+      # pg_hba line is in effect by the time the replica tries to connect.
+      - source: primary-init
+        target: /docker-entrypoint-initdb.d/10-replication.sh
+        mode: 0755
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # REPLICA
+  # ---------------------------------------------------------------------------
+  postgres-replica:
+    <<: *pg-common
+    container_name: pulse-pg-replica
+    depends_on:
+      postgres-primary:
+        # service_healthy, not service_started: pg_basebackup against a Postgres
+        # that has merely *launched* fails with a connection refused, and the
+        # replica then sits in a restart loop that looks like a replication bug.
+        condition: service_healthy
+    # The whole replication setup, visible rather than hidden in an image.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          echo ">>> no data directory — taking a base backup from the primary"
+          rm -rf "$$PGDATA"; mkdir -p "$$PGDATA"
+          # -Xs : stream WAL during the backup, so the copy is consistent
+          #       without needing wal_keep_size to cover the whole run
+          # -R  : write standby.signal + primary_conninfo. THIS is what makes it
+          #       a replica; there is no other switch.
+          # -S  : use a replication slot, so the primary retains WAL for us even
+          #       if we are down. See wal_keep_size above for the tradeoff.
+          PGPASSWORD="$$REPL_PASSWORD" pg_basebackup \
+            -h postgres-primary -p 5432 -U replicator \
+            -D "$$PGDATA" -Fp -Xs -R -C -S pulse_replica_1 -P
+          chmod 0700 "$$PGDATA"
+          echo ">>> base backup complete"
+        else
+          echo ">>> data directory present — starting as an existing replica"
+        fi
+        exec docker-entrypoint.sh postgres \
+          -c hot_standby=on \
+          -c log_min_duration_statement=200 \
+          -c log_line_prefix='%m [%p] %q%u@%d ' \
+          -c shared_buffers=256MB \
+          -c max_connections=200 \
+          -c wal_receiver_status_interval=2s \
+          -c max_standby_streaming_delay=30s
+        # max_standby_streaming_delay=30s: a long-running read on the replica
+        # can conflict with WAL replay (the primary vacuumed a row the query
+        # still needs). Postgres either delays replay — increasing lag — or
+        # cancels the query with "canceling statement due to conflict with
+        # recovery". 30 s buys analytics queries time; the alternative is
+        # hot_standby_feedback=on, which stops the primary vacuuming rows the
+        # replica is reading and therefore lets a replica bloat your PRIMARY.
+        # Lab Part C reproduces the cancellation, because it is the error people
+        # meet first and understand last.
+    ports:
+      - "5433:5432"
+    volumes:
+      - pulse-pg-replica:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` alone is not enough here: it answers yes while the replica
+      # is still replaying and before it accepts connections. Assert recovery
+      # mode explicitly, which also proves the replication actually took.
+      test:
+        - CMD-SHELL
+        - pg_isready -U pulse -d pulse && psql -U pulse -d pulse -tAc 'SELECT pg_is_in_recovery()' | grep -q t
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # PGBOUNCER  (profile: pool)
+  # ---------------------------------------------------------------------------
+  pgbouncer:
+    image: edoburu/pgbouncer:1.23.1
+    container_name: pulse-pgbouncer
+    profiles: ["pool"]
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    volumes:
+      # Written by hand in lab Part D. Every line in it is argued for there;
+      # copying someone's pgbouncer.ini is how people end up in session mode
+      # wondering why pooling did nothing.
+      - ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    ports:
+      - "6432:6432"
+    healthcheck:
+      # PgBouncer's admin console is a real Postgres-protocol database named
+      # `pgbouncer`. `SHOW POOLS;` on it is the pooling equivalent of
+      # pg_stat_activity, and lab Part D leans on it heavily.
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -p 6432 -U pulse -d pgbouncer -tAc 'SHOW POOLS;' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    environment:
+      PGPASSWORD: pulse
+    stop_grace_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # REDIS — unchanged from compose.dev.yml. Module 13 still needs the Streams
+  # fan-out (09), the sequence counters (10) and the presence keys (11); the
+  # outbox relay publishes INTO this Redis.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: pulse-redis
+    command:
+      - redis-server
+      - --maxmemory-policy
+      - noeviction
+      - --maxmemory
+      - 1gb
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --slowlog-log-slower-than
+      - "5000"
+      - --slowlog-max-len
+      - "256"
+    ports:
+      - "6379:6379"
+    volumes:
+      - pulse-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    stop_grace_period: 10s
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+# Requires Docker Compose v2.23+ for inline `content:` on a config. On an older
+# Compose, drop this block into a file (`infra/pg-primary-init.sh`) and bind-mount
+# it instead — the script is identical.
+#
+# NOTE THE DOUBLE DOLLARS. Compose interpolates $VAR and ${VAR} in this file
+# before Docker ever sees it, so a shell variable that must survive to runtime is
+# written `$$VAR`. Getting this wrong produces an init script with empty variables
+# and a role created with a blank password, which then fails at pg_basebackup with
+# an authentication error that points nowhere near the real cause.
+configs:
+  primary-init:
+    content: |
+      #!/bin/sh
+      # Runs once, inside initdb, as the postgres superuser.
+      set -e
+
+      # A dedicated REPLICATION role. Not `pulse`: replication is a distinct
+      # privilege and giving it to the application user means a compromised app
+      # credential can stream your entire database off the box.
+      psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" <<-SQL
+        CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '$${REPL_PASSWORD}';
+      SQL
+
+      # The official image appends `host all all all scram-sha-256` to pg_hba,
+      # but `replication` is a SEPARATE pseudo-database and is NOT covered by
+      # `all`. Without this line the replica's pg_basebackup fails with
+      #   FATAL: no pg_hba.conf entry for replication connection from host ...
+      # which is the single most common first failure when people build this by
+      # hand. Note the deliberately wide CIDR: this is a laptop Compose network,
+      # not a production ACL.
+      echo "host replication replicator all scram-sha-256" >> "$$PGDATA/pg_hba.conf"
+
+volumes:
+  pulse-pg-primary:
+  pulse-pg-replica:
+  pulse-redisdata:
+
+# Compose creates `pulse-repl_default`. Inside it the hosts are the SERVICE
+# names — `postgres-primary`, `postgres-replica`, `pgbouncer`, `redis`. From the
+# host, use localhost and the published ports above. Half of "it works in the
+# container, not on my machine" is this one distinction.
