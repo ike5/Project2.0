@@ -1,0 +1,138 @@
+# infra/compose.scylla.yml — the Module 14 wide-column comparison.
+#
+# ScyllaDB, not Cassandra. They speak the same CQL and the same data model, so
+# every schema lesson transfers; Scylla is a C++ reimplementation with a
+# shard-per-core architecture and no JVM, which means:
+#
+#   * it starts in ~20 seconds instead of ~2 minutes,
+#   * it fits on a laptop with --smp 2 --memory 2G,
+#   * its p99 is not punctuated by GC pauses, which lets the lab attribute tail
+#     latency to COMPACTION -- the thing you are actually there to learn about.
+#
+# If you would rather run Cassandra, swap the image for `cassandra:5.0` and drop
+# the Scylla-specific flags. The CQL in code/scylla_schema.cql is portable; the
+# numbers in the lab will be worse and noisier.
+#
+#   docker compose -p pulse-scylla -f compose.scylla.yml up -d --wait
+#   docker compose -p pulse-scylla -f compose.scylla.yml --profile cluster up -d --wait
+#   docker compose -p pulse-scylla -f compose.scylla.yml down -v
+#
+# Ports:
+#   9042  scylla1 CQL      (the single-node default target)
+#   9043  scylla2 CQL      (profile: cluster)
+#   9044  scylla3 CQL      (profile: cluster)
+#
+# LOW-MEMORY PATH: run scylla1 only, with `--smp 1 --memory 1G`. Every
+# conclusion in lab Parts D and F holds; only Part E's three-node column is
+# unavailable, and the lab says so where it matters.
+
+name: pulse-scylla
+
+x-scylla: &scylla
+  image: scylladb/scylla:6.0
+  # --overprovisioned 1 and --developer-mode 1 tell Scylla it is NOT alone on
+  # the machine. Without them it assumes it owns every core and all the RAM,
+  # pins threads, and turns your laptop into a space heater while producing
+  # latency numbers that mean nothing. NEVER set these in production: developer
+  # mode also disables the O_DIRECT / fsync checks that keep your data safe.
+  command: >-
+    --smp 2
+    --memory 2G
+    --overprovisioned 1
+    --developer-mode 1
+    --skip-wait-for-gossip-to-settle 0
+  healthcheck:
+    # `nodetool status` returning UN (Up/Normal) for this node is the real
+    # readiness signal. cqlsh answering is NOT sufficient: it answers while the
+    # node is still in JOINING, and a client that connects then gets
+    # NoHostAvailable a few seconds later, which reads like a driver bug.
+    test: ["CMD-SHELL", "nodetool status | grep -q '^UN' || exit 1"]
+    interval: 10s
+    timeout: 10s
+    retries: 30
+    start_period: 30s
+  stop_grace_period: 60s
+  restart: unless-stopped
+
+services:
+  # -------------------------------------------------------------------------
+  # SINGLE NODE — the default target for lab Part D.
+  #
+  # One node with RF=1 is not a database you would run. It is the right thing
+  # to LEARN on, because it isolates the data-model lesson (partition keys,
+  # clustering order, compaction) from the distribution lesson (replication,
+  # consistency levels, repair). Part E adds the other two nodes and the
+  # numbers change in instructive ways -- notably the idempotency LWT, which
+  # goes from expensive to very expensive once Paxos has peers to talk to.
+  # -------------------------------------------------------------------------
+  scylla1:
+    <<: *scylla
+    container_name: pulse-scylla1
+    ports:
+      - "9042:9042"       # CQL
+      - "9180:9180"       # Prometheus metrics -- Module 20 scrapes this
+    volumes:
+      - scylla1-data:/var/lib/scylla
+    environment:
+      SCYLLA_CLUSTER_NAME: pulse
+
+  # -------------------------------------------------------------------------
+  # THE OTHER TWO NODES, behind the `cluster` profile.
+  #
+  # --seeds points at scylla1 for BOTH, which is fine for a three-node lab
+  # cluster and wrong for production (a single seed is a single point of
+  # bootstrap failure; real clusters list two or three per rack).
+  #
+  # Bring them up ONE AT A TIME. Scylla, like Cassandra, streams data during
+  # bootstrap and only one node may join at a time by default; starting both at
+  # once produces a node that sits in JOINING until the other finishes, or --
+  # worse, on an under-resourced laptop -- a gossip split where each thinks it
+  # is the only node. `--wait` plus the nodetool healthcheck makes this safe:
+  #
+  #   docker compose ... --profile cluster up -d --wait scylla2
+  #   docker compose ... --profile cluster up -d --wait scylla3
+  # -------------------------------------------------------------------------
+  scylla2:
+    <<: *scylla
+    container_name: pulse-scylla2
+    profiles: ["cluster"]
+    command: >-
+      --smp 2
+      --memory 2G
+      --overprovisioned 1
+      --developer-mode 1
+      --seeds scylla1
+    ports:
+      - "9043:9042"
+      - "9181:9180"
+    volumes:
+      - scylla2-data:/var/lib/scylla
+    environment:
+      SCYLLA_CLUSTER_NAME: pulse
+    depends_on:
+      scylla1: { condition: service_healthy }
+
+  scylla3:
+    <<: *scylla
+    container_name: pulse-scylla3
+    profiles: ["cluster"]
+    command: >-
+      --smp 2
+      --memory 2G
+      --overprovisioned 1
+      --developer-mode 1
+      --seeds scylla1
+    ports:
+      - "9044:9042"
+      - "9182:9180"
+    volumes:
+      - scylla3-data:/var/lib/scylla
+    environment:
+      SCYLLA_CLUSTER_NAME: pulse
+    depends_on:
+      scylla2: { condition: service_healthy }
+
+volumes:
+  scylla1-data:
+  scylla2-data:
+  scylla3-data:

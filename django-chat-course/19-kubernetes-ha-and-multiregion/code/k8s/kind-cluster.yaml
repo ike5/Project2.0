@@ -1,0 +1,58 @@
+# code/k8s/kind-cluster.yaml — the local "multi-zone" cluster for Module 19.
+#
+#   kind create cluster --name pulse --config code/k8s/kind-cluster.yaml
+#
+# Four nodes: one control plane and three workers, each labelled with a fake
+# availability zone. The zone labels are the point of the file — without them
+# `topologySpreadConstraints` has nothing to spread across, and Part F's
+# "a quorum in one zone is not a quorum" drill cannot be demonstrated.
+#
+# `topology.kubernetes.io/zone` is the well-known label the scheduler and every
+# cloud provider use. Setting it by hand on a kind worker is a lie the scheduler
+# is happy to believe, which is exactly what makes local topology drills possible.
+#
+# LOW-MEMORY PATH (~4 GB): delete the three `worker` entries and run a
+# single-node cluster. You lose Part F (node drains, PDB enforcement, topology
+# spread) because there is nowhere to drain to. Everything else works.
+#
+# Memory budget for the full four-node cluster with the whole stack on it:
+# ~10 GB. Docker Desktop users: raise the VM memory limit first, or the
+# control plane will be OOM-killed halfway through Part C and the failure looks
+# like a CNI bug.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+# One extra: `kind` maps host ports to the control-plane node so the ingress
+# controller is reachable from your laptop without `kubectl port-forward`.
+# 8090 is used instead of 80 so this does not collide with Module 18's nginx.
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            # ingress-nginx's kind manifest schedules onto this label.
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - { containerPort: 80,  hostPort: 8090, protocol: TCP }
+      - { containerPort: 443, hostPort: 8443, protocol: TCP }
+
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: zone-a
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: zone-b
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: zone-c
+
+# Why not `kind`'s default single node?
+#
+# Because every interesting object in this module is about placement: topology
+# spread, PodDisruptionBudgets, node drains, pod anti-affinity. On one node a PDB
+# is untestable (there is nowhere to evict to), a spread constraint is trivially
+# satisfied, and `kubectl drain` takes the whole cluster down. The three workers
+# cost ~1.5 GB and buy you the entire second half of the lab.

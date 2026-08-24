@@ -1,0 +1,110 @@
+# code/k8s/ingress.yaml — the WebSocket-aware ingress.
+#
+# ingress-nginx is a DIFFERENT nginx from the one Module 18 configured by hand,
+# with DIFFERENT defaults, and every WebSocket lesson from Module 03 has to be
+# re-applied here. This is where people rediscover proxy_read_timeout, usually
+# at 3 a.m., usually after concluding that "Kubernetes drops WebSockets".
+#
+# Install the controller first:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+#   kubectl wait -n ingress-nginx --for=condition=ready pod \
+#     --selector=app.kubernetes.io/component=controller --timeout=180s
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pulse
+  annotations:
+    # ---- WebSocket lifetime -------------------------------------------------
+    # THE DEFAULT IS 60 SECONDS AND IT KILLS IDLE WEBSOCKETS.
+    # Module 11's heartbeat is every 10s so a healthy socket never idles that
+    # long -- which means the failure only shows up for the users whose client
+    # backgrounded the tab and stopped pinging. It looks like a client bug.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # ---- Session affinity ---------------------------------------------------
+    # Sticky sessions are an OPTIMIZATION here, not a correctness requirement --
+    # Module 07 established that any worker can serve any user once the Redis
+    # backplane exists. What stickiness buys is reconnect locality (a warm
+    # consumer, a warm group membership) and fewer cross-shard subscriptions.
+    #
+    # `persistent` (rather than the default `balanced`) keeps a client pinned
+    # even when the endpoint set changes, so only the clients that were ON the
+    # replaced pod are remapped -- the theoretical minimum. The challenge
+    # measures all three modes.
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "persistent"
+    nginx.ingress.kubernetes.io/session-cookie-name: "pulse-node"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "86400"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+
+    # ---- Drain behaviour ----------------------------------------------------
+    # When a pod's readiness goes false the controller reloads its upstream
+    # list. `worker-shutdown-timeout` (a controller-level setting, shown here for
+    # reference) governs how long the OLD nginx worker keeps serving established
+    # connections across that reload. Too short and a config reload -- which
+    # happens on every deploy of every service in the cluster -- silently kills
+    # long-lived sockets that had nothing to do with the change.
+    nginx.ingress.kubernetes.io/service-upstream: "false"
+
+    # ---- Handshake rate limiting -------------------------------------------
+    # Module 18's cheatsheet: rate-limit the HANDSHAKE, not just messages. A
+    # reconnect storm is thousands of upgrade requests, and an upgrade is far
+    # more expensive than a frame. 200/s/IP is generous for real users and
+    # brutal for a herd from one NAT.
+    nginx.ingress.kubernetes.io/limit-rps: "200"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+
+    # ---- Proxy buffering ----------------------------------------------------
+    # Buffering an upgraded connection is meaningless and adds latency. nginx
+    # disables it for upgraded connections automatically, but the HTTP API on
+    # the same Ingress benefits from a bigger buffer for scrollback pages.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64k"
+
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pulse
+                port: { number: 8000 }
+---
+# Controller-level settings that cannot be expressed as per-Ingress annotations.
+# Patch this into the existing ConfigMap rather than replacing it:
+#
+#   kubectl -n ingress-nginx patch configmap ingress-nginx-controller \
+#     --patch-file code/k8s/ingress.yaml --type merge   # (this document only)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+data:
+  # How long an old nginx worker keeps serving established connections after a
+  # config reload. The default is 240s. Every deploy of every service in the
+  # cluster reloads this nginx, so a socket that outlives the window is dropped
+  # by a change it had nothing to do with. 3600s matches proxy-read-timeout.
+  worker-shutdown-timeout: "3600s"
+
+  # Upstream keepalive to the app pods. Not about WebSockets -- about the HTTP
+  # API (scrollback, tickets, health) sharing the same ingress.
+  upstream-keepalive-connections: "320"
+  upstream-keepalive-timeout: "60"
+
+  # ingress-nginx's default is 16384 worker connections. Each proxied WebSocket
+  # consumes TWO (client side and upstream side), so the real ceiling is 8,192
+  # sockets per controller replica. At 10,000 connections you are already over
+  # it, and the symptom is refused upgrades with nothing in the app's logs.
+  max-worker-connections: "65536"
+
+  # Log the upstream address so you can answer "which pod was this client on?"
+  # during the affinity measurements in the challenge.
+  log-format-upstream: >-
+    $remote_addr - [$time_local] "$request" $status
+    upstream=$upstream_addr cookie=$cookie_pulse_node rt=$request_time

@@ -1,0 +1,234 @@
+# code/k8s/redis.yaml — the two Redis topologies, as Kubernetes objects.
+#
+# Module 18's conclusion was TWO topologies for TWO jobs, because `channels_redis`
+# shards by group name and knows nothing about cluster hash slots — a plain
+# PUBLISH on a Redis Cluster is broadcast to every node, which gives the right
+# answer at roughly triple the cost, forever, with no error to tell you.
+#
+#   channel layer  -> 3 INDEPENDENT instances, listed in CHANNEL_LAYERS["hosts"].
+#                     Pure transport. Losing one costs a reconnect. Disposable.
+#   state          -> Redis Cluster, 3 primaries + 3 replicas.
+#                     Streams, room:{slug}:seq, presence, rate buckets, tickets.
+#                     Every one of those is a correctness surface.
+#
+# The operational posture is deliberately OPPOSITE for the two tiers. Read the
+# comments on each before you "unify" them.
+#
+#   kubectl apply -f code/k8s/redis.yaml
+#
+# ---------------------------------------------------------------------------
+# TIER 1 — the channel layer. Three shards, no persistence, no PVC.
+# ---------------------------------------------------------------------------
+# channels_redis picks a shard by hashing the group name, so three shards means
+# each shard carries ~1/3 of the group_send traffic. That divisor is what moves
+# the ceiling in the README's replica-count table; it is the only lever here
+# short of Module 14's room affinity.
+#
+# emptyDir, `--save ""`, `--appendonly no`: this data has no value across a
+# restart. A restarted shard forgets its group memberships, every affected socket
+# stops receiving group traffic, and the Module 11 heartbeat re-`group_add`
+# repairs it within 10 seconds. That is the entire blast radius, and it is why
+# this tier does not get a PersistentVolumeClaim.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cl
+  labels: { app: redis-cl, tier: channel-layer }
+spec:
+  clusterIP: None                 # headless -> per-pod DNS: redis-cl-0.redis-cl
+  selector: { app: redis-cl }
+  ports: [ { port: 6379, name: redis } ]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cl
+spec:
+  serviceName: redis-cl           # REQUIRED for per-pod DNS. Without it the
+  replicas: 3                     # settings below resolve to a random pod.
+  podManagementPolicy: Parallel   # independent shards: no reason to start in order
+  selector: { matchLabels: { app: redis-cl } }
+  template:
+    metadata:
+      labels: { app: redis-cl, tier: channel-layer }
+    spec:
+      terminationGracePeriodSeconds: 10       # nothing to flush
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          # These are INDEPENDENT shards, not a quorum. Losing all three at once
+          # is survivable (every client reconnects), so placement is a
+          # preference, not a rule. Contrast with the state cluster below.
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: redis-cl } }
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - redis-server
+            - --save
+            - ""                              # no RDB
+            - --appendonly
+            - "no"                            # no AOF
+            - --maxmemory
+            - 512mb
+            # A cache-shaped eviction policy is CORRECT here and wrong for the
+            # state tier below. Group memberships are reconstructible from the
+            # next heartbeat; sequence counters are not.
+            - --maxmemory-policy
+            - allkeys-lru
+          ports: [ { containerPort: 6379, name: redis } ]
+          resources:
+            requests: { cpu: 500m, memory: 640Mi }
+            limits:   { cpu: "2",  memory: 768Mi }
+          readinessProbe:
+            exec: { command: ["redis-cli", "PING"] }
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          livenessProbe:
+            exec: { command: ["redis-cli", "PING"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            # Generous: a busy single-threaded Redis running a long Lua script
+            # can be slow to answer PING, and restarting it for that is how you
+            # turn a latency blip into an outage.
+            failureThreshold: 5
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          emptyDir: { sizeLimit: 1Gi }        # deliberately NOT a PVC
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: redis-cl }
+spec:
+  # Independent shards, so this is about blast radius, not quorum: draining two
+  # shards at once makes two thirds of the fleet reconnect simultaneously, which
+  # is Module 18's thundering herd (RTO 4.2s -> 41.8s).
+  maxUnavailable: 1
+  selector: { matchLabels: { app: redis-cl } }
+
+# ---------------------------------------------------------------------------
+# TIER 2 — the state cluster. Six pods, PVCs, noeviction, hard spread.
+# ---------------------------------------------------------------------------
+# Holds: room:{slug}:stream (Module 09), room:{slug}:seq (Module 05),
+# presence:{slug} (Module 11), rate:{user}:* buckets, wsticket:* (Module 21).
+#
+# `--maxmemory-policy noeviction` is argued at length in infra/README.md and it
+# is not negotiable here. With an eviction policy, memory pressure makes Redis
+# silently delete whichever key it likes: lose a sequence counter and every
+# client sees a gap and triggers a resume storm; lose a stream entry and a
+# message is gone with no error anywhere. noeviction turns silent partial data
+# loss into a loud, attributable OOM error.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-state
+  labels: { app: redis-state, tier: state }
+spec:
+  clusterIP: None
+  selector: { app: redis-state }
+  publishNotReadyAddresses: true    # cluster formation needs pods before Ready
+  ports:
+    - { port: 6379,  name: redis }
+    - { port: 16379, name: cluster }   # the cluster bus. Forgetting it is the
+                                       # #1 reason CLUSTER MEET hangs forever.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-state
+spec:
+  serviceName: redis-state
+  replicas: 6                      # 3 primaries + 3 replicas, assigned in Part B
+  podManagementPolicy: Parallel
+  selector: { matchLabels: { app: redis-state } }
+  template:
+    metadata:
+      labels: { app: redis-state, tier: state }
+    spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 2               # 6 pods over 3 zones = 2 each
+          topologyKey: topology.kubernetes.io/zone
+          # A RULE, not a preference. Three primaries in one zone is not a
+          # cluster, it is a single point of failure with extra steps. A Pending
+          # pod is a visible problem; silent co-location is an invisible one.
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: redis-state } }
+      affinity:
+        podAntiAffinity:
+          # Best-effort: keep a primary and its replica off the same node even
+          # within a zone. Required-during-scheduling would leave pods Pending
+          # on a 3-worker kind cluster, which is worse than the risk.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app: redis-state } }
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - redis-server
+            - --cluster-enabled
+            - "yes"
+            - --cluster-config-file
+            - /data/nodes.conf        # MUST be on the PVC: it is the pod's
+                                      # identity in the cluster. On emptyDir a
+                                      # restarted pod rejoins as a stranger.
+            - --cluster-node-timeout
+            - "5000"                  # 5s. Lower = faster failover, more false
+                                      # positives under GC/disk stalls. Module
+                                      # 18 measured 5s as the useful floor.
+            - --appendonly
+            - "yes"
+            - --appendfsync
+            - everysec
+            - --maxmemory
+            - 1500mb
+            - --maxmemory-policy
+            - noeviction              # see the block comment above
+          ports:
+            - { containerPort: 6379,  name: redis }
+            - { containerPort: 16379, name: cluster }
+          resources:
+            requests: { cpu: 500m, memory: 1792Mi }
+            limits:   { cpu: "2",  memory: 2Gi }
+          readinessProbe:
+            exec:
+              # PING is not enough for a cluster member: a node that has lost
+              # quorum still answers PING and refuses every keyed command with
+              # CLUSTERDOWN. Ask about cluster state instead.
+              command: ["sh", "-c", "redis-cli CLUSTER INFO | grep -q 'cluster_state:ok'"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec: { command: ["redis-cli", "PING"] }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - { name: data, mountPath: /data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 4Gi } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: redis-state }
+spec:
+  # 6 replicas, quorum needs a majority of PRIMARIES (2 of 3). minAvailable: 5
+  # means at most one pod may be voluntarily evicted at a time.
+  #
+  # NEVER set this to 6. minAvailable == replicas makes every node in the
+  # cluster permanently undrainable, the eviction API retries forever, and the
+  # error message does not say "your PDB is impossible."
+  minAvailable: 5
+  selector: { matchLabels: { app: redis-state } }

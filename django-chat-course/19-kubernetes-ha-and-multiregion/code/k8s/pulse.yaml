@@ -1,0 +1,262 @@
+# code/k8s/pulse.yaml — the app tier.
+#
+# A DEPLOYMENT, not a StatefulSet. The README argues this at length; the short
+# version is that a StatefulSet exists to give you identity you must RECLAIM
+# (same name, same disk, same replication position), and connection state is
+# identity you CANNOT reclaim. A restarted pulse-0 shares nothing with the old
+# one but a label.
+#
+# The headless Service at the bottom gives per-pod DNS without the rest of the
+# StatefulSet semantics, which is what Module 20 needs for per-pod scrapes.
+#
+#   kubectl apply -f code/k8s/pulse.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: pulse-config }
+data:
+  DJANGO_SETTINGS_MODULE: pulse.settings.k8s
+  PULSE_REGION: us
+  # 4 workers per pod, NOT 8. Module 07 measured the eighth worker making
+  # fan-out SLOWER (441,000 vs 521,000 outbound msg/s) because each subscribed
+  # worker process costs ~46 us of Redis's single thread per group_send. Four is
+  # the measured sweet spot; see hpa.yaml for what that does to maxReplicas.
+  PULSE_UVICORN_WORKERS: "4"
+
+  # preStop already waits for endpoint propagation before SIGTERM is delivered,
+  # so the Module 18 in-process wait must be ZERO here or you wait twice and
+  # burn 6 seconds of the grace budget on nothing.
+  PULSE_DRAIN_DELAY: "0"
+
+  # Three independent channel-layer shards (redis.yaml, tier 1). channels_redis
+  # hashes the group name to pick one, so each shard carries ~1/3 of group_send.
+  PULSE_CHANNEL_LAYER_HOSTS: >-
+    redis://redis-cl-0.redis-cl:6379,redis://redis-cl-1.redis-cl:6379,redis://redis-cl-2.redis-cl:6379
+  # The state cluster (redis.yaml, tier 2), reached with a cluster-aware client.
+  PULSE_STATE_REDIS_NODES: redis-state-0.redis-state:6379
+
+  # Module 18's finding, and it is a landmine on Kubernetes too: redis-py's
+  # default socket_timeout is None -- no timeout at all. On a frozen node
+  # (docker pause, a stalled disk, a NotReady kubelet) a None timeout blocks the
+  # worker's event loop forever, taking every connection on that worker with it.
+  # Setting it to 2.0s took the pause drill from RTO 14.8s to 9.1s and p99 from
+  # 8,940 ms to 2,180 ms.
+  PULSE_REDIS_SOCKET_TIMEOUT: "2.0"
+
+  # The connection admission ceiling. At the pinned ~45 KB/connection plus kernel
+  # socket buffers, and with 3 GiB of pod memory minus ~700 MB of Python/Django
+  # baseline across 4 workers, the arithmetic is roughly:
+  #     (3072 - 700) MB / 45 KB  ~=  54,000 connections per pod
+  # Operate at 65% of that (Module 06's knee rule) and round down hard, because
+  # exceeding it is an OOMKill and OOMKills cascade.
+  PULSE_MAX_CONNECTIONS: "30000"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulse
+  labels: { app: pulse }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+
+  # 30s of settle time between rollout steps. Without it, a pod counts as
+  # available the instant readiness passes and the NEXT pod starts draining
+  # immediately -- so its clients arrive at a pod that has been serving for one
+  # second with cold connection pools. Module 18's rolling_deploy.sh had
+  # `sleep 45` for exactly this; here it is a field.
+  #
+  # It also keeps the rollout step interval (30s+) longer than the client jitter
+  # window (1-30s), so consecutive reconnect waves do not overlap.
+  minReadySeconds: 30
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0    # never drop below `replicas` of capacity
+      maxSurge: 1          # add one, then remove one
+
+  selector: { matchLabels: { app: pulse } }
+  template:
+    metadata:
+      labels: { app: pulse }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # 90s. This is a HARD SIGKILL deadline and preStop's 6 seconds count
+      # against it, not on top of it. The budget:
+      #     preStop sleep            6s
+      #     frame flush              2s
+      #     close loop           ~1s per 10k sockets
+      #     Uvicorn graceful     up to 45s of headroom
+      # A pod holding 3,300 sockets measures ~9s end to end; the rest is margin,
+      # because there is no partial credit on a SIGKILL.
+      terminationGracePeriodSeconds: 90
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          # ScheduleAnyway for the APP tier. A Pulse pod that cannot be placed
+          # evenly should still be placed -- capacity beats balance when the
+          # cost of imbalance is a slightly larger blast radius rather than a
+          # lost quorum. Copying redis-state's DoNotSchedule here is how you get
+          # Pending app pods during a traffic spike.
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: pulse } }
+
+      containers:
+        - name: pulse
+          image: pulse:local
+          imagePullPolicy: IfNotPresent
+
+          # THE PID 1 REQUIREMENT.
+          #
+          # This must be the exec form (a JSON array), never a shell string.
+          # Docker's shell form wraps the command in `/bin/sh -c`; the shell
+          # becomes PID 1, receives SIGTERM, and does not forward it. Uvicorn
+          # never learns it is shutting down, lifespan.shutdown never fires, the
+          # registry is never drained, and 90 seconds later the kubelet SIGKILLs
+          # everything. 10,000 clients get close code 1006.
+          #
+          # It LOOKS like it works: the pod terminates, the rollout goes green.
+          # Only the close-code distribution tells you. Part E counts them.
+          command:
+            - uvicorn
+            - pulse.asgi:application
+          args:
+            - --host=0.0.0.0
+            - --port=8000
+            - --workers=4
+            - --loop=uvloop                    # Module 15: ~1.4x on p99 and density
+            - --timeout-graceful-shutdown=45
+            - --ws-ping-interval=20            # Module 11's heartbeat cadence
+            - --ws-ping-timeout=20
+
+          envFrom:
+            - configMapRef: { name: pulse-config }
+            - configMapRef: { name: pulse-db-config }
+          env:
+            - name: PULSE_POD
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: PULSE_NODE
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            # NOTE: there is no PULSE_ZONE here, deliberately. The downward API
+            # can only expose the POD's own labels and annotations, and
+            # `topology.kubernetes.io/zone` is a NODE label -- Kubernetes does
+            # not propagate it. Every "just use the downward API" snippet for
+            # zone-aware routing is wrong for this reason. If you need the zone
+            # in the process, look it up once at startup through the API using
+            # PULSE_NODE, and fail soft (Part G: the API server can be gone).
+            - name: PULSE_DB_USER
+              valueFrom: { secretKeyRef: { name: pulse-pg-credentials, key: username } }
+            - name: PULSE_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: pulse-pg-credentials, key: password } }
+            # Module 20 needs this: prometheus_client with several worker
+            # processes requires a shared mmap directory or /metrics returns
+            # whichever worker the kernel happened to pick.
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: /run/prom
+
+          ports:
+            - { containerPort: 8000, name: http }
+
+          resources:
+            # requests == limits -> Guaranteed QoS class. A Burstable pod is the
+            # first thing the kubelet evicts under node memory pressure, and
+            # evicting a pod holding 10,000 sockets to save a node is a trade you
+            # never want made automatically.
+            requests: { cpu: "4", memory: 3Gi }
+            limits:   { cpu: "4", memory: 3Gi }
+
+          lifecycle:
+            preStop:
+              exec:
+                # Endpoint removal and SIGTERM are CONCURRENT. Removal must
+                # propagate through the endpoints controller, every kube-proxy,
+                # every node's iptables rules, and the ingress controller's
+                # upstream list -- ~620 ms measured in kind. Without this sleep,
+                # handshakes are still routed here after Uvicorn stops calling
+                # accept(). Part E measures the cost: 118 rejected handshakes.
+                #
+                # NOTE: this requires /bin/sh in the image. A distroless base
+                # makes preStop fail silently and you are back to 1006 closes.
+                command: ["/bin/sh", "-c", "sleep 6"]
+
+          startupProbe:
+            # Django app-registry population + channel-layer connect + the
+            # migration check. 30 x 2s = 60s of budget before liveness engages.
+            httpGet: { path: /healthz, port: 8000 }
+            failureThreshold: 30
+            periodSeconds: 2
+
+          readinessProbe:
+            # TWITCHY ON PURPOSE. Leaving the endpoint list is cheap and
+            # reversible. /readyz also carries the Module 18 capacity signal
+            # (outbound queue depth + fan-out p99), which turned the brownout
+            # drill from RPO 4,102 into RPO 0.
+            httpGet: { path: /readyz, port: 8000 }
+            periodSeconds: 3
+            failureThreshold: 2
+            successThreshold: 1
+            timeoutSeconds: 2
+
+          livenessProbe:
+            # SLUGGISH ON PURPOSE. 6 x 10s = 60s before a restart, because a
+            # restart costs 10,000 reconnects. And know its limit: with 4 worker
+            # processes behind one listening socket, a probe lands on a blocked
+            # worker only ~1 time in 4, so three consecutive hits is a 1.6%
+            # chance per cycle. This probe CANNOT see a single stalled worker.
+            # Module 20's per-worker chat_event_loop_lag_seconds can.
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 5
+
+          volumeMounts:
+            - { name: prom, mountPath: /run/prom }
+
+      volumes:
+        - name: prom
+          emptyDir: { medium: Memory, sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulse
+  labels: { app: pulse }
+spec:
+  selector: { app: pulse }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
+  # NOT sessionAffinity: ClientIP. It hashes the source IP, which behind NAT
+  # means thousands of users share one bucket, and kube-proxy's affinity table is
+  # keyed to the endpoint set -- so changing the set invalidates nearly all of
+  # it. The challenge measures this: 98% of clients remapped when one pod is
+  # replaced. Affinity is done at the ingress instead (ingress.yaml).
+  sessionAffinity: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulse-headless
+  labels: { app: pulse }
+spec:
+  # Per-pod DNS without StatefulSet semantics: 10-244-1-5.pulse-headless...
+  # Module 20 uses this to scrape each pod directly instead of through the
+  # load-balanced Service, which would otherwise give you one random pod's
+  # metrics per scrape.
+  clusterIP: None
+  selector: { app: pulse }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: pulse }
+spec:
+  # Not about quorum -- about blast radius. Two simultaneously drained pods
+  # double the reconnect wave onto the survivors, which is exactly Module 18's
+  # thundering herd (app-node-kill without jitter: RTO 4.2s -> 41.8s, 1,204
+  # messages lost).
+  maxUnavailable: 1
+  selector: { matchLabels: { app: pulse } }

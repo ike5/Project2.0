@@ -1,0 +1,270 @@
+# infra/obs/compose.obs.yml — the Module 20 observability tier.
+#
+# Prometheus + Grafana + Loki + Tempo + an OpenTelemetry Collector. ~2 GB.
+#
+# This stack runs ALONGSIDE whichever data/app stack you are measuring — it
+# publishes no ports that collide with compose.dev.yml, compose.replica.yml or
+# ha/compose.ha.yml, and it joins their network so it can scrape by service name:
+#
+#   docker compose -p pulse-ha  -f infra/ha/compose.ha.yml   up -d --wait
+#   docker compose -p pulse-obs -f infra/obs/compose.obs.yml up -d --wait
+#   open http://localhost:3000                     # anonymous admin, local only
+#   docker compose -p pulse-obs -f infra/obs/compose.obs.yml down -v
+#
+# THE NETWORK IS THE ONE THING YOU MUST GET RIGHT. `pulse-obs` attaches to the
+# external network `pulse-ha_default` created by the HA stack. Bring the HA
+# stack up FIRST, or Compose fails with "network pulse-ha_default declared as
+# external, but could not be found" — which reads like a bug in this file and is
+# not one. Measuring a different stack? Change PULSE_TARGET_NETWORK:
+#
+#   PULSE_TARGET_NETWORK=pulse-dev_default docker compose -p pulse-obs \
+#     -f infra/obs/compose.obs.yml up -d
+#
+# CONFIG FILES. Like `pgbouncer.ini` in compose.replica.yml, the config files
+# mounted below are written BY THE LAB, one setting at a time, because the
+# settings are the lesson. Part A of Module 20's lab creates:
+#
+#   infra/obs/prometheus.yml
+#   infra/obs/rules/slo.yml                 (recording rules + burn-rate alerts)
+#   infra/obs/tempo.yaml
+#   infra/obs/otel-collector.yaml
+#   infra/obs/pg-queries.yaml               (replication lag, cl_waiting, partitions)
+#   infra/obs/grafana/provisioning/datasources/*.yml
+#   infra/obs/grafana/dashboards/*.json     (Part G; an empty dir mounts fine)
+#
+# Until then `up -d` starts the containers that need no config (Loki ships a
+# usable default) and the rest exit with a clear "no such file" rather than a
+# mystery.
+
+name: pulse-obs
+
+x-obs-common: &obs-common
+  restart: unless-stopped
+  networks: [obs, target]
+  # Nothing in here is a source of truth. A 10 s grace period is plenty; the
+  # 60 s the app tier needs (infra/ha) is for draining sockets, which these
+  # services do not have.
+  stop_grace_period: 10s
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PROMETHEUS — metrics storage and the SLO recording/alerting rules.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    <<: *obs-common
+    image: prom/prometheus:v2.54.1
+    container_name: pulse-prometheus
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 15 days. Long enough for a 30-day error budget? NO — and that is
+      # deliberate. The budget is computed from a RECORDING RULE evaluated every
+      # 30 s (rules/slo.yml), so the 30-day window is over a cheap derived
+      # series, not over raw histogram buckets. Retaining 30 days of raw buckets
+      # for a 100k-room service is tens of gigabytes for a number you can
+      # compute for kilobytes.
+      - --storage.tsdb.retention.time=15d
+      # Lets Prometheus accept remote_write from Tempo's metrics generator, which
+      # is how span metrics (and therefore the metric->trace path that
+      # multiprocess Python cannot do with exemplars) reach the dashboards.
+      - --web.enable-remote-write-receiver
+      # Exemplar storage is enabled anyway: the k6 harness and any single-worker
+      # service can still emit them. prometheus_client in multiprocess mode
+      # cannot — see the README's exposition section for the whole argument.
+      - --enable-feature=exemplar-storage
+      - --web.enable-lifecycle          # POST /-/reload instead of a restart
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # TEMPO — trace storage, and the span-metrics generator.
+  # ---------------------------------------------------------------------------
+  # Note what is NOT published: Tempo's own OTLP receivers. Everything goes
+  # through the collector, because the collector is where tail sampling happens,
+  # and tail sampling is not optional at 6,000 spans/s (Module 20 Part C).
+  # Pointing the app at Tempo directly works and quietly disables sampling.
+  tempo:
+    <<: *obs-common
+    image: grafana/tempo:2.6.0
+    container_name: pulse-tempo
+    ports:
+      - "3200:3200"          # HTTP API: Grafana queries this
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    user: "0:0"              # the image runs as 10001 and the named volume is
+                             # root-owned on first create; this avoids a
+                             # permission error that looks like a config error
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10            # generous: Tempo replays its WAL on start
+
+  # ---------------------------------------------------------------------------
+  # LOKI — structured logs, correlated to traces by trace_id IN THE LINE.
+  # ---------------------------------------------------------------------------
+  # Runs on the image's built-in /etc/loki/local-config.yaml: single binary,
+  # filesystem storage, no config file of your own. That default is fine for a
+  # laptop and wrong for production, where you want object storage and a real
+  # retention policy — but the point of this module is what you do with logs,
+  # not how you shard an index.
+  #
+  # THE ONE RULE: trace_id is NEVER a Loki label. Labels are an index and an
+  # unbounded label is the Loki version of the Prometheus cardinality bomb. It
+  # lives in the log line, where the full-text index finds it.
+  loki:
+    <<: *obs-common
+    image: grafana/loki:3.2.0
+    container_name: pulse-loki
+    ports: ["3100:3100"]
+    volumes:
+      - loki-data:/loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # OTEL COLLECTOR — the only thing the app talks to.
+  # ---------------------------------------------------------------------------
+  # Three jobs, and the first is the reason the collector exists at all:
+  #
+  #  1. TAIL SAMPLING. Keep 100% of errored and slow traces, ~5% of the rest.
+  #     Head sampling in the app (`sampling.probability = 0.01`) throws away 99%
+  #     of your errors along with 99% of everything else. Tail sampling needs a
+  #     component that buffers whole traces, which an in-process SDK cannot be.
+  #  2. LOG COLLECTION, via the filelog receiver over Docker's JSON log files,
+  #     with the trace_id parsed out of the app's structured JSON so Grafana can
+  #     jump trace -> logs and back.
+  #  3. FAN-OUT. Traces to Tempo, logs to Loki, its own metrics to Prometheus,
+  #     from one agent with one pipeline.
+  #
+  # Rejected alternative: Promtail (or Grafana Alloy) for logs and direct OTLP to
+  # Tempo for traces. Two agents, two config languages, and the trace-id
+  # extraction lives in a different process from the sampling decision — so a
+  # trace can be sampled away while its logs are kept, which is the worst of both.
+  otel-collector:
+    <<: *obs-common
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    container_name: pulse-otelcol
+    ports:
+      - "4317:4317"          # OTLP gRPC  <- the app exports here
+      - "4318:4318"          # OTLP HTTP
+      - "8889:8889"          # Prometheus exporter: the collector's own metrics
+                             # AND span metrics. Scraped by prometheus.yml.
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      # Read-only access to Docker's container logs for the filelog receiver.
+      # This is the one privileged-looking mount in the stack; it is :ro and it
+      # is how every log agent on Docker works.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    # Tail sampling buffers every span of every in-flight trace for
+    # `decision_wait` (10 s). At 6,000 spans/s that is a real working set, and
+    # an unbounded collector will OOM before it drops anything. Bound it here
+    # and configure memory_limiter in the config so it sheds deliberately.
+    mem_limit: 768m
+    depends_on:
+      tempo:  { condition: service_healthy }
+      loki:   { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # GRAFANA — provisioned, not clicked.
+  # ---------------------------------------------------------------------------
+  grafana:
+    <<: *obs-common
+    image: grafana/grafana:11.2.0
+    container_name: pulse-grafana
+    ports: ["3000:3000"]
+    environment:
+      # LOCAL ONLY. Anonymous admin so the lab has no login step. Never do this
+      # anywhere a network can reach.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor,traceToMetrics,traceToProfiles
+      # Dashboards are files in git, provisioned at boot. A dashboard someone
+      # built by clicking is a dashboard that dies with its VM, and the panel
+      # that answered the question during the last incident is the one you most
+      # need to still exist during the next one.
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "5s"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus: { condition: service_healthy }
+      tempo:      { condition: service_healthy }
+      loki:       { condition: service_healthy }
+
+  # ---------------------------------------------------------------------------
+  # EXPORTERS — the USE half of the dashboard.
+  # ---------------------------------------------------------------------------
+  # Pulse's own metrics (chat/metrics.py, Module 06) are the RED half. These two
+  # are the resource half, and they exist because Module 18's drills produced
+  # RTO numbers that only made sense once you could see what Redis and Postgres
+  # were doing at the time.
+  redis-exporter:
+    <<: *obs-common
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: pulse-redis-exporter
+    environment:
+      # Comma-separated: the HA stack has three channel-layer shards plus the
+      # state cluster, and an aggregate across them hides exactly the
+      # single-shard saturation you are looking for (Module 07's per-worker
+      # cost model lands on ONE shard at a time).
+      REDIS_ADDR: ${PULSE_REDIS_ADDRS:-redis://redis-1:6379,redis://redis-2:6379,redis://redis-3:6379}
+      # blocked_clients and the per-command stats are the two that matter here.
+      REDIS_EXPORTER_INCL_SYSTEM_METRICS: "true"
+      REDIS_EXPORTER_CHECK_KEYS: "room:*:stream,room:*:seq"
+    expose: ["9121"]
+
+  postgres-exporter:
+    <<: *obs-common
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: pulse-pg-exporter
+    environment:
+      # Points at the WRITE endpoint (HAProxy :5000 in the HA stack) so
+      # `pg_replication_lag` is measured from the primary's point of view.
+      DATA_SOURCE_NAME: ${PULSE_PG_DSN:-postgresql://pulse:pulse@haproxy:5000/pulse?sslmode=disable}
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/pg-queries.yaml
+    volumes:
+      - ./pg-queries.yaml:/etc/pg-queries.yaml:ro
+    expose: ["9187"]
+
+networks:
+  # Internal: the observability components talking to each other.
+  obs:
+    driver: bridge
+  # External: whatever you are measuring. See the header comment.
+  target:
+    external: true
+    name: ${PULSE_TARGET_NETWORK:-pulse-ha_default}
+
+volumes:
+  # Named volumes, so `down -v` is a clean reset and nothing lands in your
+  # working tree. Deleting them deletes 15 days of history, which is exactly
+  # what you want between experiments and exactly what you do not want by
+  # accident — hence the explicit -v.
+  prometheus-data:
+  tempo-data:
+  loki-data:
+  grafana-data:

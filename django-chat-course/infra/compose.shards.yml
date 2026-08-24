@@ -1,0 +1,236 @@
+# infra/compose.shards.yml — the Module 14 sharded message tier.
+#
+# compose.replica.yml gave you one primary and one replica. This file gives you
+# FOUR independent Postgres instances that know nothing about each other, plus
+# two more behind a profile so you can perform a 4 -> 6 rebalance.
+#
+#   shard0..shard3   the sharded tier. Each holds `chat_message` and NOTHING
+#                    else. No rooms, no memberships, no outbox. They are not
+#                    replicas of one another and there is no coordinator: the
+#                    ONLY thing that knows where a room lives is the
+#                    `shard_assignment` table on `default`, plus the router that
+#                    reads it.
+#   shard4, shard5   behind the `grow` profile. Started in lab Part B when you
+#                    rebalance 4 -> 6 and move 1,364 of 4,096 logical shards.
+#
+# The `default` database (rooms, users, memberships, outbox, shard_assignment)
+# is NOT in this file. It is `postgres-primary` from compose.replica.yml, and
+# Module 14 keeps using it. Run BOTH stacks:
+#
+#   docker compose -p pulse-repl  -f compose.replica.yml up -d --wait
+#   docker compose -p pulse-shard -f compose.shards.yml  up -d --wait
+#   docker compose -p pulse-shard -f compose.shards.yml --profile grow up -d --wait
+#   docker compose -p pulse-shard -f compose.shards.yml down -v      # note the -v
+#
+# Ports, so Django on the host can reach every shard:
+#
+#   5440  shard0        5443  shard3
+#   5441  shard1        5444  shard4   (profile: grow)
+#   5442  shard2        5445  shard5   (profile: grow)
+#
+# They deliberately do NOT collide with 5432 (primary), 5433 (replica) or 6432
+# (PgBouncer), so the whole Module 13 + Module 14 topology runs at once. That is
+# six to eight Postgres processes on a laptop; see the low-memory note below.
+#
+# LOW-MEMORY PATH: run two shards instead of four. Comment out shard2/shard3,
+# set LOGICAL_SHARDS_PER_PHYSICAL accordingly in the router, and every conclusion
+# in the lab still holds — the distribution numbers change, the shape does not.
+
+name: pulse-shard
+
+# ---------------------------------------------------------------------------
+# One definition, six services. Every shard is byte-identical in configuration,
+# which is the point: a shard is not special, it is a peer. The moment one shard
+# has a different setting you have a snowflake, and the migration runbook in
+# challenge.md stops being writable.
+# ---------------------------------------------------------------------------
+x-shard: &shard
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_USER: pulse
+    POSTGRES_PASSWORD: pulse
+    POSTGRES_DB: pulse
+    PGDATA: /var/lib/postgresql/data/pgdata
+    # Suppress the "initdb: warning: enabling trust authentication" noise; these
+    # are throwaway local containers on a private compose network.
+    POSTGRES_HOST_AUTH_METHOD: trust
+  command:
+    - postgres
+    # Same 200 ms threshold as compose.dev.yml and compose.replica.yml. Lab
+    # Part C watches this log to prove which shard a scatter-gather actually
+    # touched -- the log IS the tripwire when the router is wrong.
+    - -c
+    - log_min_duration_statement=200
+    - -c
+    - log_line_prefix=%m [%p] %q%u@%d
+    # Deliberately modest. Four of these plus a primary plus a replica on a
+    # 16 GB laptop is already 6 x shared_buffers; making each one big is how you
+    # end up swapping and blaming the shard router for the p99.
+    - -c
+    - shared_buffers=128MB
+    - -c
+    - work_mem=8MB
+    # max_connections=100 per shard, NOT 200. Module 13's arithmetic gets worse
+    # here, not better:
+    #
+    #   3 app nodes x 8 Uvicorn workers        = 24 processes
+    #   each with a threadpool of 12           = 288 potential backends
+    #   x 4 shards                             = 1,152 potential backends
+    #
+    # against 400 across the tier. Sharding MULTIPLIES the connection problem by
+    # the shard count, which is why PgBouncer is not optional once you shard --
+    # and why the lab has you put one in front of each shard.
+    - -c
+    - max_connections=100
+    # Autovacuum matters more on a shard than on a monolith, because each shard
+    # gets the full insert rate of its slice with a fraction of the RAM.
+    - -c
+    - autovacuum_vacuum_scale_factor=0.02
+    - -c
+    - autovacuum_analyze_scale_factor=0.01
+  healthcheck:
+    # -d pulse, not just -U pulse: pg_isready succeeds against the postgres
+    # database while `pulse` is still being created by initdb, and a router that
+    # connects in that window gets "database pulse does not exist" exactly once,
+    # at startup, in a way that looks like a config bug.
+    test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 10s
+  stop_grace_period: 30s
+  restart: unless-stopped
+
+services:
+  # -------------------------------------------------------------------------
+  # THE FOUR SHARDS
+  #
+  # Note there is no `depends_on` anywhere in this file. Shards do not depend on
+  # each other -- that independence is the entire product of sharding, and it is
+  # also why a cross-shard transaction is impossible. If you ever find yourself
+  # wanting a `depends_on` between two shards, you have designed a join.
+  # -------------------------------------------------------------------------
+  shard0:
+    <<: *shard
+    container_name: pulse-shard0
+    ports: ["5440:5432"]
+    volumes: ["shard0-data:/var/lib/postgresql/data"]
+
+  shard1:
+    <<: *shard
+    container_name: pulse-shard1
+    ports: ["5441:5432"]
+    volumes: ["shard1-data:/var/lib/postgresql/data"]
+
+  shard2:
+    <<: *shard
+    container_name: pulse-shard2
+    ports: ["5442:5432"]
+    volumes: ["shard2-data:/var/lib/postgresql/data"]
+
+  shard3:
+    <<: *shard
+    container_name: pulse-shard3
+    ports: ["5443:5432"]
+    volumes: ["shard3-data:/var/lib/postgresql/data"]
+
+  # -------------------------------------------------------------------------
+  # GROWTH: two more shards, behind a profile.
+  #
+  # They are behind `--profile grow` rather than always-on for a pedagogical
+  # reason as much as a memory one: lab Part B has you compute the rebalance
+  # plan BEFORE the new shards exist. A migration plan you cannot write without
+  # the target hardware already running is a migration plan you will write at
+  # 2 a.m.
+  #
+  # 4 -> 6 is chosen over 4 -> 8 deliberately. Doubling is the one growth step
+  # where naive `hash mod N` happens to be optimal (50% moved either way), so a
+  # team that only ever doubles never learns that they have a resharding
+  # problem. 4 -> 6 moves 66.6% under naive modulo and 33.3% -- the theoretical
+  # minimum -- under logical shards. That gap is the lab.
+  # -------------------------------------------------------------------------
+  shard4:
+    <<: *shard
+    container_name: pulse-shard4
+    profiles: ["grow"]
+    ports: ["5444:5432"]
+    volumes: ["shard4-data:/var/lib/postgresql/data"]
+
+  shard5:
+    <<: *shard
+    container_name: pulse-shard5
+    profiles: ["grow"]
+    ports: ["5445:5432"]
+    volumes: ["shard5-data:/var/lib/postgresql/data"]
+
+  # -------------------------------------------------------------------------
+  # ONE PgBouncer PER SHARD, behind the `pool` profile.
+  #
+  # Module 13 argued that Python's process-per-core model makes pooling matter
+  # sooner than on the JVM. Sharding multiplies that by N. But note the shape:
+  # ONE PgBouncer PER SHARD, not one in front of all of them. PgBouncer is a
+  # connection multiplexer, not a router -- it has no idea what a shard is and
+  # cannot read your assignment table. Routing happens in Django; pooling
+  # happens per destination. Confusing the two produces a "pooler" that sends
+  # room.7's write to shard2.
+  #
+  # Bring these up only for lab Part C, where you exhaust max_connections on
+  # purpose first:
+  #   docker compose -p pulse-shard -f compose.shards.yml --profile pool up -d
+  # -------------------------------------------------------------------------
+  pgbouncer0:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    container_name: pulse-shard0-pool
+    profiles: ["pool"]
+    environment: &bouncer-env
+      # DB_HOST is overridden per service below; this anchor carries the rest.
+      DB_HOST: shard0
+      DB_USER: pulse
+      DB_PASSWORD: pulse
+      DB_NAME: pulse
+      # transaction mode, with everything Module 13 taught you it breaks:
+      # server-side prepared statements (prepare_threshold=None in Django, or
+      # max_prepared_statements here), server-side cursors, and CONN_MAX_AGE.
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "2000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "200"
+      AUTH_TYPE: trust
+    ports: ["6440:5432"]
+    depends_on:
+      shard0: { condition: service_healthy }
+
+  pgbouncer1:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    container_name: pulse-shard1-pool
+    profiles: ["pool"]
+    environment: { <<: *bouncer-env, DB_HOST: shard1 }
+    ports: ["6441:5432"]
+    depends_on:
+      shard1: { condition: service_healthy }
+
+  pgbouncer2:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    container_name: pulse-shard2-pool
+    profiles: ["pool"]
+    environment: { <<: *bouncer-env, DB_HOST: shard2 }
+    ports: ["6442:5432"]
+    depends_on:
+      shard2: { condition: service_healthy }
+
+  pgbouncer3:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    container_name: pulse-shard3-pool
+    profiles: ["pool"]
+    environment: { <<: *bouncer-env, DB_HOST: shard3 }
+    ports: ["6443:5432"]
+    depends_on:
+      shard3: { condition: service_healthy }
+
+volumes:
+  shard0-data:
+  shard1-data:
+  shard2-data:
+  shard3-data:
+  shard4-data:
+  shard5-data:

@@ -1,0 +1,139 @@
+# code/k8s/hpa.yaml — autoscaling a socket server.
+#
+# Requires prometheus-adapter so the HPA can read Pulse's own metrics:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm install prom-adapter prometheus-community/prometheus-adapter \
+#        -n monitoring -f code/k8s/prometheus-adapter-values.yaml
+#
+# Read the maxReplicas comment before raising it. It is not a round number.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: pulse }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: pulse }
+
+  minReplicas: 2
+  # ==========================================================================
+  # maxReplicas IS A MEASURED CONSTANT. DO NOT RAISE IT WITHOUT RE-MEASURING.
+  # ==========================================================================
+  # Module 07 measured the channel layer's cost against Redis's SINGLE thread:
+  #
+  #     fixed per group_send      55 us
+  #     per subscribed worker     46 us
+  #
+  # That per-worker term is charged per worker PROCESS, and each replica runs 4
+  # of them. With the three channel-layer shards from redis.yaml, each shard
+  # sees a third of the traffic, so for W total subscribed workers:
+  #
+  #     group_sends/s = 3 * 0.95 * 1e6 / (55 + 46*W)
+  #     outbound/s    = group_sends/s * 199 recipients
+  #
+  #     replicas  workers   Redis ceiling   Python ceiling   binds
+  #        1         4       2,373,000        ~521,000       Python
+  #        2         8       1,341,000      ~1,010,000       Python
+  #        3        12         934,000      ~1,490,000       REDIS   <-- inverts
+  #        4        16         717,000      ~1,950,000       REDIS
+  #
+  # The third replica is the new eighth worker: it makes fan-out SLOWER. Module
+  # 07 measured exactly this shape at the worker level (8 workers = 441,000 vs
+  # 4 workers = 521,000) and Part F measures it again at the pod level.
+  #
+  # The escape is NOT a bigger number here. It is more channel-layer shards
+  # (linear) or room affinity from Module 14 (much better than linear), because
+  # both reduce W-per-room rather than raising the ceiling.
+  maxReplicas: 3
+
+  metrics:
+    # ---- Signal 1: connection budget ---------------------------------------
+    # CPU is the wrong metric and this is the whole reason for the file. A pod
+    # holding 10,000 idle connections sits at ~18% CPU with essentially no
+    # capacity left: at ~45 KB/connection plus kernel socket buffers, memory and
+    # the event loop's callback queue bind long before CPU does. An HPA
+    # targeting 70% CPU would never scale up -- and would scale DOWN, evicting a
+    # pod whose connections then land on pods that cannot hold them.
+    - type: Pods
+      pods:
+        metric: { name: chat_connections_utilization }   # active / MAX_CONNECTIONS
+        target:
+          type: AverageValue
+          averageValue: "650m"        # 0.65 -- Module 06's knee rule
+
+    # ---- Signal 2: event-loop lag (the LEADING indicator) ------------------
+    # Module 06's chat/metrics.py exists because this number moves BEFORE p99
+    # does. One async worker is one core; when that core cannot drain its
+    # callback queue, a timer asking for 250 ms starts returning late. Sustained
+    # lag above ~10 ms means the worker is at or past its knee.
+    #
+    # It also catches the case connection count cannot: a few users in enormous
+    # rooms produce huge fan-out with a small connection count.
+    - type: Pods
+      pods:
+        metric: { name: chat_event_loop_lag_seconds_max }
+        target:
+          type: AverageValue
+          averageValue: "10m"         # 10 ms
+
+  behavior:
+    # THE ASYMMETRY IS THE DESIGN.
+    #
+    # Scaling up costs a pod. Scaling down costs everyone on a pod a reconnect,
+    # and Module 18 measured what an unmanaged reconnect wave does: RTO 4.2s ->
+    # 41.8s and 1,204 messages lost when the herd arrives together.
+    scaleUp:
+      stabilizationWindowSeconds: 30          # react fast
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 60 }
+      selectPolicy: Max
+
+    scaleDown:
+      # Ten minutes of sustained low load before removing a pod. A lunchtime dip
+      # is not a reason to disconnect 10,000 people, and they will all be back
+      # in twenty minutes anyway.
+      stabilizationWindowSeconds: 600
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 300 }   # one pod per 5 minutes
+      selectPolicy: Min
+---
+# prometheus-adapter rules: turn Pulse's raw metrics into the two series the HPA
+# asks for above. Save as code/k8s/prometheus-adapter-values.yaml.
+#
+# The `worker` label matters here: chat_connections_active is per worker process
+# (Module 06 exposes it that way), so it must be SUMMED to the pod before it can
+# be compared against a per-pod ceiling. Averaging it instead -- the intuitive
+# thing -- gives you a number four times too small and an HPA that never fires.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-rules
+  namespace: monitoring
+data:
+  rules.yaml: |
+    rules:
+      # active connections / configured ceiling, summed across the pod's workers
+      - seriesQuery: 'chat_connections_active{namespace!="",pod!=""}'
+        resources:
+          overrides:
+            namespace: { resource: namespace }
+            pod:       { resource: pod }
+        name:
+          matches: "^chat_connections_active$"
+          as: "chat_connections_utilization"
+        metricsQuery: |
+          sum by (<<.GroupBy>>) (<<.Series>>{<<.LabelMatchers>>})
+          / on (<<.GroupBy>>) group_left
+          max by (<<.GroupBy>>) (chat_max_connections{<<.LabelMatchers>>})
+
+      # WORST worker in the pod, not the average. A single blocked worker is
+      # invisible in an average over four -- which is the same reason the
+      # liveness probe cannot see it (see pulse.yaml).
+      - seriesQuery: 'chat_event_loop_lag_seconds{namespace!="",pod!=""}'
+        resources:
+          overrides:
+            namespace: { resource: namespace }
+            pod:       { resource: pod }
+        name:
+          matches: "^chat_event_loop_lag_seconds$"
+          as: "chat_event_loop_lag_seconds_max"
+        metricsQuery: |
+          max by (<<.GroupBy>>) (<<.Series>>{<<.LabelMatchers>>})

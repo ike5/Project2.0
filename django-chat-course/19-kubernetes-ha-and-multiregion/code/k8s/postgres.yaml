@@ -1,0 +1,152 @@
+# code/k8s/postgres.yaml — CloudNativePG replaces Module 18's Patroni + etcd + HAProxy.
+#
+# Install the operator first (Part C of the lab):
+#
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.24/releases/cnpg-1.24.0.yaml
+#   kubectl wait --for=condition=Available deployment/cnpg-controller-manager \
+#     -n cnpg-system --timeout=180s
+#
+# What this one CRD replaces from Module 18's Compose stack:
+#
+#   3 x patroni     -> spec.instances: 3
+#   3 x etcd        -> the Kubernetes API server IS the DCS. This is the biggest
+#                      structural difference: CloudNativePG holds leadership in a
+#                      Kubernetes object with a lease, not in a separate etcd
+#                      quorum you have to run and drain carefully. Module 18's
+#                      etcd-quorum-loss drill (RTO 45.2s, all writes rejected)
+#                      becomes "the control plane is down", which Part G shows
+#                      has NO effect on running pods.
+#   haproxy :5000   -> the pulse-pg-rw Service (endpoints follow the primary)
+#   haproxy :5001   -> the pulse-pg-ro Service (replicas only)
+#   pgbouncer       -> the Pooler CRD, at the bottom of this file
+#
+# What it does NOT replace: psycopg's behaviour behind a transaction pooler.
+# Module 13's `prepare_threshold: None` and `CONN_MAX_AGE = 0` are still
+# mandatory. An operator cannot fix your client library's defaults.
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: pulse-pg-credentials }
+type: kubernetes.io/basic-auth
+stringData:
+  username: pulse
+  password: pulse          # local only. Real clusters: External Secrets, SOPS,
+                           # or the operator's own generated secret.
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: { name: pulse-pg }
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "512MB"
+      # Carried forward from infra/compose.dev.yml so the slow-query log means
+      # the same thing it has meant since Module 12. 200 ms sits above a healthy
+      # indexed lookup (~1 ms) and below what a human notices (~500 ms).
+      log_min_duration_statement: "200"
+      wal_level: "replica"
+      # Module 13 partitions by time via RunSQL migrations; the planner needs
+      # this on to prune partitions at execution time for parameterised queries.
+      enable_partition_pruning: "on"
+
+    # RPO 0, matching Module 18's target. `any: 1` means a commit must be
+    # acknowledged by at least one replica before the client hears "committed".
+    #
+    # Module 13 measured the premium at +2.1 ms per outbox write, and used
+    # remote_apply specifically for the outbox because an outbox row that exists
+    # on the primary but not on a promoted replica is a message that is silently
+    # never relayed. That is the failure with no error anywhere.
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: required
+
+  bootstrap:
+    initdb:
+      database: pulse
+      owner: pulse
+      secret: { name: pulse-pg-credentials }
+
+  storage: { size: 20Gi }
+  walStorage: { size: 10Gi }     # WAL on its own volume: a WAL-full primary is
+                                 # a stopped primary, and it is the failure mode
+                                 # that a long replica outage produces.
+
+  # The operator's shorthand for topology spread + anti-affinity. Equivalent to
+  # the hand-written constraints in redis.yaml; the operator keeps them correct
+  # across failover and switchover, which is the point of using one.
+  affinity:
+    topologyKey: topology.kubernetes.io/zone
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred     # `required` leaves pods Pending on a
+                                       # 3-worker kind cluster during a rollout
+
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: "2",  memory: 2Gi }
+
+  # Module 20 scrapes this. The operator ships a sensible default dashboard's
+  # worth of metrics; the ones that matter for Pulse are replication lag and
+  # the number of waiting backends.
+  monitoring:
+    enablePodMonitor: true
+
+  # A PDB is created by the operator automatically for the instances. Do not add
+  # your own with minAvailable == instances; see redis.yaml for why.
+---
+# PgBouncer, as a CRD. This is Module 13's transaction pooling, unchanged in
+# behaviour and therefore unchanged in gotchas.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata: { name: pulse-pg-pool }
+spec:
+  cluster: { name: pulse-pg }
+  instances: 2                    # two poolers so a pooler restart is not an
+                                  # outage. They are stateless.
+  type: rw                        # writes only. Reads go straight to pulse-pg-ro:
+                                  # read traffic is long-lived and pooling it
+                                  # adds a hop for no benefit.
+  pgbouncer:
+    poolMode: transaction         # THE setting. session mode would make the
+                                  # pooler useless (one server conn per client)
+                                  # and transaction mode is what breaks psycopg's
+                                  # server-side prepared statements.
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "40"
+      # Module 13's better fix, available from PgBouncer 1.21: let the pooler
+      # track prepared statements itself. Django still sets prepare_threshold to
+      # None as a belt-and-braces measure, because a downgrade of this image
+      # would otherwise reintroduce the failure silently.
+      max_prepared_statements: "200"
+  monitoring: { enablePodMonitor: true }
+---
+# Django's view of all this. Applied as a ConfigMap so the settings module can
+# read it and the mapping is visible in one place.
+#
+#   default  -> the pooler   (writes, and reads inside a transaction)
+#   replica  -> pulse-pg-ro  (the Module 13 database router's read alias)
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: pulse-db-config }
+data:
+  PULSE_DB_WRITE_HOST: pulse-pg-pool-rw
+  PULSE_DB_WRITE_PORT: "5432"
+  PULSE_DB_READ_HOST: pulse-pg-ro
+  PULSE_DB_READ_PORT: "5432"
+  PULSE_DB_NAME: pulse
+  # Both of these are Module 13 findings and both are still required:
+  #   prepare_threshold=None  psycopg3 prepares after 5 executions by default;
+  #                           behind a transaction pooler the next execution may
+  #                           land on a different server connection -> error.
+  #   CONN_MAX_AGE=0          Django's persistent connections and PgBouncer's
+  #                           pool are both pools. Pick one. PgBouncer wins
+  #                           because connecting to it costs 0.31 ms against
+  #                           3.14 ms for a real Postgres backend fork.
+  PULSE_DB_PREPARE_THRESHOLD: "none"
+  PULSE_DB_CONN_MAX_AGE: "0"

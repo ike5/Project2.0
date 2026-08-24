@@ -1,0 +1,93 @@
+# code/k8s/prometheus-adapter-values.yaml — Helm values for prometheus-adapter.
+#
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm install prom-adapter prometheus-community/prometheus-adapter \
+#        -n monitoring --create-namespace -f code/k8s/prometheus-adapter-values.yaml
+#
+# This is the bridge between Module 20's Prometheus and the HPA in hpa.yaml.
+# Without it, `kubectl get hpa` shows `<unknown>` for both custom metrics and
+# the HPA silently does nothing at all -- it does not error, it does not warn,
+# it just never scales. Check `kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1`
+# before concluding that your metric is wrong.
+
+prometheus:
+  url: http://prometheus.monitoring.svc
+  port: 9090
+
+# Scrape-to-decision latency. The HPA polls every 15 s, the adapter caches for
+# 30 s, Prometheus scrapes every 15 s: worst case ~60 s from a real change to a
+# scaling decision. That is why hpa.yaml's scaleUp stabilization window is 30 s
+# rather than something smaller -- anything shorter is noise, not reaction.
+rules:
+  default: false
+
+  custom:
+    # ------------------------------------------------------------------
+    # 1. Connection budget utilisation, SUMMED across the pod's workers.
+    # ------------------------------------------------------------------
+    # chat_connections_active carries a `worker` label (Module 06's metrics.py
+    # exposes it per worker process, because that is the granularity at which
+    # capacity is actually consumed). Four workers each holding 7,500
+    # connections is a pod holding 30,000.
+    #
+    # AVERAGING is the intuitive thing and it is wrong: it gives 7,500 against a
+    # 30,000 ceiling, a utilisation of 0.25, and an HPA that never fires. This
+    # exact mistake is why the metric is renamed here rather than used raw.
+    - seriesQuery: 'chat_connections_active{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod:       { resource: pod }
+      name:
+        matches: "^chat_connections_active$"
+        as: "chat_connections_utilization"
+      metricsQuery: |
+        sum by (<<.GroupBy>>) (<<.Series>>{<<.LabelMatchers>>})
+        / on (<<.GroupBy>>) group_left
+        max by (<<.GroupBy>>) (chat_max_connections{<<.LabelMatchers>>})
+
+    # ------------------------------------------------------------------
+    # 2. Event-loop lag: the WORST worker in the pod, never the average.
+    # ------------------------------------------------------------------
+    # This is the same argument as the liveness probe in Part D. One blocked
+    # worker out of four averages to 25% of the truth and looks like a mildly
+    # unhealthy pod; `max` shows a frozen one. Everything about a process-per-
+    # core runtime wants `max by (pod)` rather than `avg`.
+    - seriesQuery: 'chat_event_loop_lag_seconds{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod:       { resource: pod }
+      name:
+        matches: "^chat_event_loop_lag_seconds$"
+        as: "chat_event_loop_lag_seconds_max"
+      metricsQuery: |
+        max by (<<.GroupBy>>) (<<.Series>>{<<.LabelMatchers>>})
+
+    # ------------------------------------------------------------------
+    # 3. Outbound queue depth — kept available but NOT wired to the HPA.
+    # ------------------------------------------------------------------
+    # Module 18 wired this to readiness for load shedding, and Task 3 of the
+    # challenge shows why it must not also drive scaling: it is a signal that
+    # can be true of every pod at once, and a metric that spikes fleet-wide
+    # makes the HPA scale out into a Redis ceiling it cannot see (hpa.yaml's
+    # replica table). Exposed for dashboards and alerts; not for autoscaling.
+    - seriesQuery: 'chat_outbound_queue_depth{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod:       { resource: pod }
+      name:
+        matches: "^chat_outbound_queue_depth$"
+        as: "chat_outbound_queue_depth_max"
+      metricsQuery: |
+        max by (<<.GroupBy>>) (<<.Series>>{<<.LabelMatchers>>})
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 256Mi }
+
+# Two replicas: the adapter is on the path of every HPA decision in the cluster,
+# and a single replica means a rolling update of the adapter freezes autoscaling
+# for the duration. It is stateless, so this costs nothing.
+replicas: 2

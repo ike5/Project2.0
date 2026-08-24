@@ -1,0 +1,294 @@
+# code/slo_rules.yml — recording rules + burn-rate alerts.
+#
+# Copy to infra/obs/rules/slo.yml; Prometheus loads /etc/prometheus/rules/*.yml.
+#
+#   cp 20-observability-and-slos/code/slo_rules.yml infra/obs/rules/slo.yml
+#   curl -XPOST localhost:9090/-/reload
+#
+# Two layers, deliberately separate:
+#
+#   sli:*   the raw ratio, recorded at several windows. Cheap, computed from
+#           histogram BUCKETS (which sum correctly across workers and pods --
+#           a client-computed percentile does not).
+#   slo:*   budget consumption, computed FROM the recorded sli series rather
+#           than from raw buckets. That is what lets a 30-day error budget live
+#           on a Prometheus with 15-day raw retention.
+#
+# THE FOUR SLOs
+#   1 delivery success    >= 99.99%   budget 4.3 min / 30 d
+#   2 delivery latency    >= 99.9% under 500 ms   budget 43 min / 30 d
+#   3 connection success  >= 99.9%    budget 43 min / 30 d
+#   4 sequence integrity  <  0.01% of rooms with a permanent gap
+
+groups:
+  # ===========================================================================
+  - name: pulse-sli
+    interval: 30s
+    rules:
+      # --- SLI 1: delivery success -----------------------------------------
+      # Server-side. Counts a socket write that did not raise as a success, so
+      # it CANNOT see the last hop. chat_probe_* below closes that gap and the
+      # burn-rate alerts use both.
+      - record: sli:delivery_success:ratio_rate5m
+        expr: |
+          1 - (
+            sum(rate(chat_delivery_failures_total[5m]))
+            / clamp_min(sum(rate(chat_delivery_attempts_total[5m])), 1)
+          )
+      - record: sli:delivery_success:ratio_rate30m
+        expr: |
+          1 - (sum(rate(chat_delivery_failures_total[30m]))
+               / clamp_min(sum(rate(chat_delivery_attempts_total[30m])), 1))
+      - record: sli:delivery_success:ratio_rate1h
+        expr: |
+          1 - (sum(rate(chat_delivery_failures_total[1h]))
+               / clamp_min(sum(rate(chat_delivery_attempts_total[1h])), 1))
+      - record: sli:delivery_success:ratio_rate6h
+        expr: |
+          1 - (sum(rate(chat_delivery_failures_total[6h]))
+               / clamp_min(sum(rate(chat_delivery_attempts_total[6h])), 1))
+      - record: sli:delivery_success:ratio_rate3d
+        expr: |
+          1 - (sum(rate(chat_delivery_failures_total[3d]))
+               / clamp_min(sum(rate(chat_delivery_attempts_total[3d])), 1))
+
+      # `clamp_min(..., 1)` everywhere is not decoration. At 03:00 the
+      # denominator can be zero, 0/0 is NaN, NaN compares false against every
+      # threshold, and your alert silently stops evaluating during exactly the
+      # window when nobody is watching.
+
+      # --- SLI 2: delivery latency -----------------------------------------
+      # The fraction under 500 ms, read straight off the le="0.5" bucket. This
+      # is why 0.5 has to be an exact bucket edge in delivery_metrics.py --
+      # histogram_quantile would interpolate and the SLI would be an estimate.
+      - record: sli:delivery_latency:ratio_rate5m
+        expr: |
+          sum(rate(chat_delivery_latency_seconds_bucket{le="0.5"}[5m]))
+          / clamp_min(sum(rate(chat_delivery_latency_seconds_count[5m])), 1)
+      - record: sli:delivery_latency:ratio_rate30m
+        expr: |
+          sum(rate(chat_delivery_latency_seconds_bucket{le="0.5"}[30m]))
+          / clamp_min(sum(rate(chat_delivery_latency_seconds_count[30m])), 1)
+      - record: sli:delivery_latency:ratio_rate1h
+        expr: |
+          sum(rate(chat_delivery_latency_seconds_bucket{le="0.5"}[1h]))
+          / clamp_min(sum(rate(chat_delivery_latency_seconds_count[1h])), 1)
+      - record: sli:delivery_latency:ratio_rate6h
+        expr: |
+          sum(rate(chat_delivery_latency_seconds_bucket{le="0.5"}[6h]))
+          / clamp_min(sum(rate(chat_delivery_latency_seconds_count[6h])), 1)
+
+      # --- SLI 3: connection success ---------------------------------------
+      # rejected_capacity is EXCLUDED from the failure numerator. Module 19's
+      # admission control rejecting a handshake with a Retry-After is the system
+      # working: a bounded, visible, retryable refusal. Counting it as an SLO
+      # violation would punish you for the fix and reward you for OOMing.
+      - record: sli:connection_success:ratio_rate5m
+        expr: |
+          sum(rate(chat_handshake_total{outcome=~"success|rejected_capacity"}[5m]))
+          / clamp_min(sum(rate(chat_handshake_total[5m])), 1)
+      - record: sli:connection_success:ratio_rate1h
+        expr: |
+          sum(rate(chat_handshake_total{outcome=~"success|rejected_capacity"}[1h]))
+          / clamp_min(sum(rate(chat_handshake_total[1h])), 1)
+      - record: sli:connection_success:ratio_rate6h
+        expr: |
+          sum(rate(chat_handshake_total{outcome=~"success|rejected_capacity"}[6h]))
+          / clamp_min(sum(rate(chat_handshake_total[6h])), 1)
+
+      # --- SLI 4: sequence integrity ---------------------------------------
+      # PERMANENT gaps only. A transient gap is normal on every reconnect and
+      # Module 10's resume-from-cursor fills it; an SLI that counts those fires
+      # on healthy behaviour and gets muted within a week.
+      - record: sli:sequence_integrity:ratio_rate5m
+        expr: |
+          1 - (sum(rate(chat_sequence_gaps_permanent_total[5m]))
+               / clamp_min(sum(rate(chat_published_total[5m])), 1))
+
+      # --- The prober: the only end-to-end truth ---------------------------
+      - record: sli:probe_success:ratio_rate30m
+        expr: |
+          sum(rate(chat_probe_delivered_total[30m]))
+          / clamp_min(sum(rate(chat_probe_delivered_total[30m])
+                        + rate(chat_probe_undelivered_total[30m])), 1)
+
+      # --- Saturation, recorded so alerts stay readable --------------------
+      # max, never avg. One blocked worker of four averages away to nothing.
+      - record: worker:event_loop_lag:max
+        expr: max by (pod) (chat_event_loop_lag_seconds)
+      # rate() of accumulated lateness = the fraction of wall clock lost.
+      - record: worker:event_loop_lag:ratio
+        expr: max by (pod) (rate(chat_event_loop_lag_seconds_total[1m]))
+      # Skew: max/avg across workers. Above ~3 means ONE worker is sick and the
+      # aggregate is lying to you (Part G).
+      - record: worker:event_loop_lag:skew
+        expr: |
+          max by (pod) (chat_event_loop_lag_seconds)
+          / clamp_min(avg by (pod) (chat_event_loop_lag_seconds), 0.0001)
+
+  # ===========================================================================
+  - name: pulse-error-budget
+    interval: 5m
+    rules:
+      # Budget remaining over 30 days, computed from the RECORDED sli series.
+      # avg_over_time on a 30 s series for 30 days is 86,400 points -- cheap.
+      # The same query over raw histogram buckets would touch tens of gigabytes
+      # and Prometheus only keeps 15 days of those (infra/obs/compose.obs.yml).
+      - record: slo:delivery_success:budget_remaining
+        expr: |
+          1 - ((1 - avg_over_time(sli:delivery_success:ratio_rate5m[30d])) / 0.0001)
+      - record: slo:delivery_latency:budget_remaining
+        expr: |
+          1 - ((1 - avg_over_time(sli:delivery_latency:ratio_rate5m[30d])) / 0.001)
+      - record: slo:connection_success:budget_remaining
+        expr: |
+          1 - ((1 - avg_over_time(sli:connection_success:ratio_rate5m[30d])) / 0.001)
+
+  # ===========================================================================
+  - name: pulse-slo-burn
+    rules:
+      # MULTI-WINDOW, MULTI-BURN-RATE (Google's SRE workbook).
+      #
+      # Every alert requires a SHORT and a LONG window to be burning at once.
+      # A single-window alert on a 5 m rate fires on every 30-second blip and
+      # gets muted; requiring both means a hiccup is ignored and a real problem
+      # pages within minutes. The short window is also what makes the alert
+      # RESOLVE quickly once you fix it -- a 6 h window alone would keep paging
+      # for hours after recovery.
+
+      # 14.4x burn over 1 h => a 30-day budget gone in ~2 days.
+      - alert: DeliverySuccessBurnFast
+        expr: |
+          (1 - sli:delivery_success:ratio_rate1h) > (14.4 * 0.0001)
+          and
+          (1 - sli:delivery_success:ratio_rate5m) > (14.4 * 0.0001)
+        for: 2m
+        labels: { severity: page, slo: delivery_success }
+        annotations:
+          summary: "Burning the delivery-success budget 14x too fast"
+          description: "{{ $value | humanizePercentage }} of deliveries failing"
+          runbook: "cheatsheets/troubleshooting.md#2-messages-vanish-between-two-connected-clients"
+
+      # 6x over 6 h => gone in ~5 days.
+      - alert: DeliverySuccessBurnSlow
+        expr: |
+          (1 - sli:delivery_success:ratio_rate6h) > (6 * 0.0001)
+          and
+          (1 - sli:delivery_success:ratio_rate30m) > (6 * 0.0001)
+        for: 15m
+        labels: { severity: page, slo: delivery_success }
+
+      # 1x over 3 d => on track to exhaust exactly. A ticket, not a page.
+      - alert: DeliverySuccessBudgetTrend
+        expr: |
+          (1 - sli:delivery_success:ratio_rate3d) > 0.0001
+          and
+          (1 - sli:delivery_success:ratio_rate6h) > 0.0001
+        for: 6h
+        labels: { severity: ticket, slo: delivery_success }
+
+      - alert: DeliveryLatencyBurnFast
+        expr: |
+          (1 - sli:delivery_latency:ratio_rate1h) > (14.4 * 0.001)
+          and
+          (1 - sli:delivery_latency:ratio_rate5m) > (14.4 * 0.001)
+        for: 2m
+        labels: { severity: page, slo: delivery_latency }
+        annotations:
+          summary: "Delivery latency budget burning 14x too fast"
+          runbook: "cheatsheets/troubleshooting.md#3-latency-is-bad-or-one-worker-is-frozen"
+
+      - alert: ConnectionSuccessBurnFast
+        expr: |
+          (1 - sli:connection_success:ratio_rate1h) > (14.4 * 0.001)
+          and
+          (1 - sli:connection_success:ratio_rate5m) > (14.4 * 0.001)
+        for: 2m
+        labels: { severity: page, slo: connection_success }
+        annotations:
+          runbook: "cheatsheets/troubleshooting.md#1-websocket-connections-fail-or-drop"
+
+  # ===========================================================================
+  - name: pulse-symptoms-and-runway
+    rules:
+      # --- The prober: a lost message is never acceptable ------------------
+      # No burn rate, no window. One undelivered probe means the backbone lost
+      # something, and the whole point of the prober is that server metrics
+      # cannot see it.
+      - alert: ProbeUndelivered
+        expr: increase(chat_probe_undelivered_total[10m]) > 0
+        for: 0m
+        labels: { severity: page, slo: delivery_success }
+        annotations:
+          summary: "A synthetic probe message was never delivered"
+          description: "Server-side delivery metrics CANNOT see this failure."
+
+      # --- The one CAUSE alert that is worth paging on ---------------------
+      # Module 15 measured the gap between "this worker is saturated" and "all
+      # 5,000 of its connections have a 9-second p99" at about four seconds.
+      # There is no time to wait for the symptom.
+      - alert: EventLoopSaturated
+        expr: worker:event_loop_lag:ratio > 0.30
+        for: 1m
+        labels: { severity: page, component: worker }
+        annotations:
+          summary: "A worker is spending >30% of wall-clock time behind"
+          description: >-
+            Almost always a synchronous call on the event loop (Module 15).
+            Find it: TraceQL { name = "asyncio.loop_stall" }, then py-spy dump.
+          runbook: "cheatsheets/troubleshooting.md#3-latency-is-bad-or-one-worker-is-frozen"
+
+      # One sick worker hiding inside a healthy-looking pod average.
+      - alert: EventLoopSkew
+        expr: worker:event_loop_lag:skew > 3 and worker:event_loop_lag:max > 0.05
+        for: 5m
+        labels: { severity: ticket, component: worker }
+        annotations:
+          summary: "One worker is much slower than its siblings in the same pod"
+
+      # --- Runway alerts: things that can be EXHAUSTED ----------------------
+      # By the time these are symptoms they are outages, so they are predictive.
+      - alert: RedisMemoryRunway
+        expr: |
+          predict_linear(redis_memory_used_bytes[6h], 24 * 3600)
+          > redis_memory_max_bytes
+        for: 30m
+        labels: { severity: page, component: redis }
+        annotations:
+          summary: "Redis will hit maxmemory within 24h"
+          description: >-
+            The state tier runs noeviction (infra/README.md), so hitting the
+            wall means WRITES START FAILING, not that a cache gets smaller.
+
+      - alert: OutboxBacklogGrowing
+        expr: |
+          outbox_backlog > 10000
+          and deriv(outbox_backlog[15m]) > 0
+        for: 10m
+        labels: { severity: page, component: outbox }
+        annotations:
+          summary: "The Celery outbox relay is falling behind and not catching up"
+
+      - alert: PartitionRunway
+        expr: pg_partitions_ahead < 2
+        for: 1h
+        labels: { severity: ticket, component: postgres }
+        annotations:
+          summary: "Fewer than 2 future time partitions exist"
+          description: >-
+            Module 13's partitions are created ahead of time. Running out means
+            inserts fail with 'no partition of relation found for row', which
+            is a total write outage with a very confusing error message.
+
+      - alert: ConnectionCapacityRunway
+        expr: |
+          predict_linear(sum(chat_connections_active)[2h:], 3600)
+          > sum(chat_max_connections)
+        for: 15m
+        labels: { severity: ticket, component: app }
+        annotations:
+          summary: "Fleet connection capacity exhausted within the hour"
+          description: >-
+            Scaling out has a ceiling (Module 19: maxReplicas is set by Redis's
+            single thread, not by your cores). Adding replicas past it makes
+            fan-out slower. Shard the channel layer instead.

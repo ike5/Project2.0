@@ -35,7 +35,7 @@ x-broker: &broker
     KAFKA_MIN_INSYNC_REPLICAS: 2
     KAFKA_NUM_PARTITIONS: 64
     KAFKA_LOG_RETENTION_HOURS: 24
-    CLUSTER_ID: pulse-cluster-0000000000
+    CLUSTER_ID: fJ5qPxtITSGfbipcjQs-Fw    # base64 of a 16-byte UUID; kafka-storage rejects anything else
   healthcheck:
     test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
     interval: 10s

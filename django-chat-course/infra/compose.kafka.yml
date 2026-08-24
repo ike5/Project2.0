@@ -1,0 +1,173 @@
+# infra/compose.kafka.yml — three Kafka brokers in KRaft mode, for Module 16.
+#
+# NO ZOOKEEPER. KRaft (Kafka Raft) folds the controller quorum into the brokers
+# themselves: each of these three containers is both a broker (serving produce
+# and fetch) and a controller (voting on cluster metadata). That is why
+# KAFKA_PROCESS_ROLES says `broker,controller` and why there is a second
+# listener on 9093 that clients never touch.
+#
+# Combined mode like this is right for a lab and wrong for production, where you
+# separate controllers onto their own small nodes so that a broker under GC or
+# disk pressure cannot destabilize the metadata quorum. Say that out loud in a
+# design review; people copy lab compose files.
+#
+#   docker compose -p pulse-kafka -f compose.kafka.yml up -d --wait
+#   docker compose -p pulse-kafka -f compose.kafka.yml down -v      # note the -v
+#
+# Ports (EXTERNAL listener, for a Python client running on the host):
+#   19092  kafka1      19093  kafka2      19094  kafka3
+#
+# RESOURCE BUDGET: three JVMs at 1 GB heap each, plus page cache. On a 16 GB
+# laptop this coexists with Redis and one Postgres, and NOT with the Module 14
+# shard stack. Stop the shards first.
+#
+# LOW-MEMORY PATH: run kafka1 only. Set KAFKA_CONTROLLER_QUORUM_VOTERS to just
+# node 1, KAFKA_DEFAULT_REPLICATION_FACTOR and the two *_REPLICATION_FACTOR vars
+# to 1, and KAFKA_MIN_INSYNC_REPLICAS to 1. You lose Part F (ISR and broker
+# kills) entirely -- durability is the one thing a single broker cannot teach --
+# and everything else holds.
+
+name: pulse-kafka
+
+x-broker: &broker
+  image: apache/kafka:3.8.0
+  environment: &broker-env
+    # -- KRaft ---------------------------------------------------------------
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    # A fixed CLUSTER_ID means `docker compose down -v && up` gives you a clean
+    # cluster with the same identity rather than a formatting error.
+    #
+    # It is NOT a free-form string: it is a UUID in URL-safe base64 with the
+    # padding stripped -- exactly 22 characters. `kafka-storage.sh random-uuid`
+    # prints one, or:
+    #     python -c "import uuid,base64; \
+    #       print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))"
+    # A human-readable value like `pulse-cluster-01` fails at format time with a
+    # message about an invalid UUID, which is a confusing first five minutes.
+    CLUSTER_ID: X049LBsKSZiId2ZVRDMiEQ
+
+    # -- Listeners -----------------------------------------------------------
+    # THREE listeners, and the distinction matters:
+    #   PLAINTEXT   broker-to-broker and container-to-container (kafka1:9092)
+    #   CONTROLLER  the Raft quorum, never spoken by a client
+    #   EXTERNAL    the host, via a published port (localhost:1909x)
+    # A Python client on your laptop bootstraps against EXTERNAL, and Kafka
+    # replies with the ADVERTISED address for the partition leader. Get that
+    # wrong and the bootstrap succeeds while every produce times out -- the
+    # single most common Kafka-in-Docker failure.
+    KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+      PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+    # -- Replication and durability -----------------------------------------
+    # replication.factor=3 + min.insync.replicas=2 is the pair that makes
+    # acks=all mean something. acks=all ALONE only waits for the in-sync set,
+    # which can be one replica. Module 16 Part F kills two brokers to prove that
+    # writes are then correctly REFUSED rather than silently accepted.
+    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    KAFKA_MIN_INSYNC_REPLICAS: 2
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+
+    # -- Topic defaults ------------------------------------------------------
+    KAFKA_NUM_PARTITIONS: 64
+    KAFKA_LOG_RETENTION_HOURS: 24
+    # 1 GB segments. Retention deletes whole SEGMENTS, never individual records,
+    # so segment size is the granularity of your retention policy -- the exact
+    # same relationship Module 13 established between partitions and DROP TABLE,
+    # and Module 14 between TWCS windows and TTL expiry. Third appearance.
+    KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    # __consumer_offsets defaults to 50 partitions. Topology A (Module 16's
+    # default: one consumer group per WORKER PROCESS, 24 of them) writes commits
+    # for 24 groups x 64 partitions. Part C measures what that costs.
+    KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 50
+
+    # -- Rebalancing ---------------------------------------------------------
+    # group.initial.rebalance.delay.ms defaults to 3000: the coordinator waits
+    # 3 s after the first member joins, so a rolling start of 24 consumers is
+    # ONE rebalance instead of 24. Left at the default deliberately -- Part E
+    # sets it to 0 to watch the storm, then puts it back.
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 3000
+
+    # -- JVM -----------------------------------------------------------------
+    # 1 GB heap. Kafka is NOT a heap-heavy system: its working set lives in the
+    # OS page cache, which is why `sendfile` and 24 consumers reading the same
+    # recent offsets are cheap. Giving the JVM more heap takes it AWAY from the
+    # page cache and makes Kafka slower. This surprises people.
+    KAFKA_HEAP_OPTS: "-Xms1g -Xmx1g"
+
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1
+    interval: 10s
+    timeout: 10s
+    retries: 30
+    start_period: 20s
+  # Kafka needs time to flush and to hand off partition leadership. SIGKILL at
+  # 10 s (the Compose default) leaves unclean shutdowns that make the NEXT start
+  # replay the log -- and then people blame Kafka for being slow to boot.
+  stop_grace_period: 60s
+  restart: unless-stopped
+
+services:
+  kafka1:
+    <<: *broker
+    container_name: pulse-kafka1
+    ports: ["19092:9094"]
+    volumes: ["kafka1-data:/tmp/kraft-combined-logs"]
+    environment:
+      <<: *broker-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092,EXTERNAL://localhost:19092
+
+  kafka2:
+    <<: *broker
+    container_name: pulse-kafka2
+    ports: ["19093:9094"]
+    volumes: ["kafka2-data:/tmp/kraft-combined-logs"]
+    environment:
+      <<: *broker-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092,EXTERNAL://localhost:19093
+
+  kafka3:
+    <<: *broker
+    container_name: pulse-kafka3
+    ports: ["19094:9094"]
+    volumes: ["kafka3-data:/tmp/kraft-combined-logs"]
+    environment:
+      <<: *broker-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092,EXTERNAL://localhost:19094
+
+  # -------------------------------------------------------------------------
+  # kafka-exporter, behind the `obs` profile. Module 20 scrapes it.
+  #
+  # It exists here rather than in obs/ because CONSUMER LAG is the metric this
+  # module is about, and you should be able to graph it while you are learning
+  # what it means. `kafka_consumergroup_lag` by group and partition is the
+  # single best health signal a log-based fan-out has -- and the one thing
+  # Redis Streams cannot give you without a round trip per room.
+  # -------------------------------------------------------------------------
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: pulse-kafka-exporter
+    profiles: ["obs"]
+    command:
+      - --kafka.server=kafka1:9092
+      - --kafka.server=kafka2:9092
+      - --kafka.server=kafka3:9092
+    ports: ["9308:9308"]
+    depends_on:
+      kafka1: { condition: service_healthy }
+
+volumes:
+  kafka1-data:
+  kafka2-data:
+  kafka3-data:
